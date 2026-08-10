@@ -9,6 +9,8 @@ import GalleryFilters, { type SortKey } from "./components/GalleryFilters";
 import GallerySummary from "./components/GallerySummary";
 import CsvImport from "./components/CsvImport";
 import SorareLogin from "./components/SorareLogin";
+import Deadline, { type GameWeek } from "./components/Deadline";
+import InsightList, { type InsightGroup } from "./components/InsightList";
 
 type OptimiseResult = {
   fixture: string | null;
@@ -43,7 +45,10 @@ const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
 const msg = (e: unknown) => (e instanceof ApiFetchError || e instanceof Error ? e.message : "Erreur inattendue");
 
 export default function Page() {
-  const [tab, setTab] = useState<"gallery" | "lineup" | "market" | "settings">("gallery");
+  const [tab, setTab] = useState<"week" | "gallery" | "lineup" | "market" | "settings">("week");
+  const [gameWeek, setGameWeek] = useState<GameWeek | null>(null);
+  const [insights, setInsights] = useState<InsightGroup[]>([]);
+  const [insightsLoading, setInsightsLoading] = useState(true);
   const [fixture, setFixture] = useState<string | null>(null);
   const [squad, setSquad] = useState<SquadCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,6 +136,25 @@ export default function Page() {
     }
   }, []);
 
+  const loadGameWeek = useCallback(async () => {
+    try {
+      setGameWeek(await apiFetch<GameWeek>("/api/gameweek"));
+    } catch (err) {
+      setError(msg(err));
+    }
+  }, []);
+
+  const loadInsights = useCallback(async () => {
+    try {
+      const data = await apiFetch<{ groups: InsightGroup[] }>("/api/insights");
+      setInsights(data.groups);
+    } catch (err) {
+      setError(msg(err));
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, []);
+
   const loadSavedLineups = useCallback(async (fx: string) => {
     try {
       setSavedLineups(await apiFetch(`/api/lineups?fixture=${encodeURIComponent(fx)}`));
@@ -142,7 +166,9 @@ export default function Page() {
   useEffect(() => {
     loadSquad();
     loadCompetitions();
-  }, [loadSquad, loadCompetitions]);
+    loadGameWeek();
+    loadInsights();
+  }, [loadSquad, loadCompetitions, loadGameWeek, loadInsights]);
 
   useEffect(() => {
     if (tab === "settings") {
@@ -225,7 +251,15 @@ export default function Page() {
     }
   }
 
-  /** Refreshes photos/stats from the public API — no Sorare login involved. */
+  /** Reloads every view that depends on the stored data. */
+  const refreshAll = useCallback(async () => {
+    await Promise.all([loadSquad(), loadGameWeek(), loadInsights()]);
+  }, [loadSquad, loadGameWeek, loadInsights]);
+
+  /**
+   * Refreshes photos/stats from the public API, then recomputes the game week
+   * and projections. No Sorare login involved at any step.
+   */
   async function refreshStats() {
     setSyncing(true);
     setNotice("");
@@ -245,9 +279,13 @@ export default function Page() {
         if (batch.nextCursor === null) break;
         cursor = batch.nextCursor;
       }
-      await loadSquad();
+
+      setNotice("Calcul des projections…");
+      const gw = await apiFetch<{ fixture: string | null; updated: number }>("/api/gameweek", { method: "POST" });
+
+      await refreshAll();
       await loadLogs();
-      setNotice("Stats à jour.");
+      setNotice(`À jour — ${gw.updated} projections pour ${gw.fixture ?? "la game week"}.`);
     } catch (err) {
       setError(msg(err));
     } finally {
@@ -364,6 +402,42 @@ export default function Page() {
       )}
 
       <main className="flex-1 px-4 py-4 pb-24 max-w-3xl w-full mx-auto">
+        {tab === "week" && (
+          <section aria-label="Cette semaine" className="space-y-4">
+            {gameWeek && <Deadline gw={gameWeek} />}
+
+            {squad.length === 0 ? (
+              <div className="space-y-4">
+                <div className="text-center py-4">
+                  <p className="font-display text-xl uppercase mb-1">Aucune donnée</p>
+                  <p className="text-sm text-muted">
+                    Importe l&apos;export CSV de ta galerie SorareScore pour démarrer.
+                  </p>
+                </div>
+                <CsvImport onDone={refreshAll} />
+              </div>
+            ) : (
+              <>
+                <GallerySummary cards={squad} />
+
+                {insightsLoading ? (
+                  <p className="font-mono text-sm text-muted">Analyse en cours…</p>
+                ) : insights.length === 0 ? (
+                  <p className="font-mono text-sm text-muted">
+                    Rien à signaler. Lance « Rafraîchir photos et stats » dans Données pour affiner l&apos;analyse.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {insights.map((g) => (
+                      <InsightList key={g.kind} group={g} />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        )}
+
         {tab === "gallery" && (
           <section aria-label="Ma galerie">
             {loading ? (
@@ -376,7 +450,7 @@ export default function Page() {
                     Importe l&apos;export CSV de ta galerie SorareScore pour démarrer.
                   </p>
                 </div>
-                <CsvImport onDone={loadSquad} />
+                <CsvImport onDone={refreshAll} />
               </div>
             ) : (
               <>
@@ -627,7 +701,7 @@ export default function Page() {
 
         {tab === "settings" && (
           <section aria-label="Données" className="space-y-3">
-            <CsvImport onDone={loadSquad} />
+            <CsvImport onDone={refreshAll} />
 
             <button
               onClick={refreshStats}
@@ -681,6 +755,7 @@ export default function Page() {
         <div className="max-w-3xl mx-auto flex">
           {(
             [
+              ["week", "Semaine"],
               ["gallery", "Galerie"],
               ["lineup", "Compo"],
               ["market", "Marché"],

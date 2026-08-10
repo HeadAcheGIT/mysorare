@@ -82,6 +82,26 @@ query PlayersBySlug($slugs: [String!]!) {
     activeInjuries { status expectedEndDate }
     activeSuspensions { reason endDate }
     nextClassicFixtureProjectedScore
+    lastFiveSo5Appearances
+    lastFifteenSo5Appearances
+    seasonAppearances
+    avgL5: averageScore(type: LAST_FIVE_SO5_AVERAGE_SCORE)
+    avgL15: averageScore(type: LAST_FIFTEEN_SO5_AVERAGE_SCORE)
+    avgL10Played: averageScore(type: LAST_TEN_PLAYED_SO5_AVERAGE_SCORE)
     rawPlayerGameScores(last: 10)
+  }
+}`;
+
+/**
+ * Upcoming game weeks with their lock times. Cheap enough to run
+ * unauthenticated, unlike the per-game schedule (`competitionGames` scores
+ * ~940 complexity against the 500 cap, so fixtures-with-games needs an API key).
+ */
+export const OPEN_FIXTURES_PUBLIC = `
+query OpenFixtures {
+  so5 {
+    allSo5Fixtures(sport: FOOTBALL, eventType: CLASSIC, future: true, first: 4) {
+      nodes { slug displayName shortDisplayName gameWeek startDate endDate cutOffDate }
+    }
   }
 }`;

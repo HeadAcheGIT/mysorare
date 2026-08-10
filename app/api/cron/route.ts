@@ -1,19 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { syncSquadAndFixtures, syncFormBatch, recomputeProjections, FORM_BATCH_SIZE } from "@/lib/services/sync";
 import { config } from "@/lib/config";
+import { enrichBatch } from "@/lib/services/enrich";
+import { syncFixtures, recomputeFromPublic } from "@/lib/services/gameweek";
+import { prisma } from "@/lib/prisma";
 import { ApiError, withErrorHandling } from "@/lib/apiHandler";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Fired daily by Vercel Cron (see vercel.json — Hobby caps cron at once a
- * day, and only guarantees the trigger fires sometime within the scheduled
- * hour). One invocation can't process a whole squad's form within the
- * function timeout, so this does squad+fixtures (fast) plus as many form
- * batches as fit in the time budget, then recomputes projections on
- * whatever's been refreshed so far. Tap "Refresh" in the app any time to
- * finish the rest immediately instead of waiting for tomorrow's cron.
+ * Daily refresh, fired by Vercel Cron (see vercel.json — Hobby allows one run
+ * a day, somewhere inside the scheduled hour).
+ *
+ * Runs entirely on Sorare's public API: no token, so nothing here can be
+ * broken by 2FA re-triggering on a changed IP, which is what made the old
+ * authenticated sync unreliable. The gallery itself comes from the CSV import
+ * and isn't touched.
+ *
+ * A full enrichment of a 400-player gallery doesn't fit in one invocation
+ * against the 20 req/min unauthenticated limit, so each run advances a cursor
+ * and picks up where the last one stopped; projections are recomputed every
+ * time on whatever has been refreshed so far.
  */
 export const GET = withErrorHandling(async (req: NextRequest) => {
   // The app-wide Basic Auth middleware deliberately skips this route so Vercel
@@ -26,29 +33,39 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
   }
 
   const started = Date.now();
-  const budgetMs = 45_000; // leaves headroom under the 60s maxDuration
-  const squad = await syncSquadAndFixtures();
+  const budgetMs = 40_000; // headroom under maxDuration for the final writes
+  const fixture = await syncFixtures();
 
-  let cursor = 0;
-  let batches = 0;
+  // Resume from wherever yesterday's run ran out of time.
+  const state = await prisma.syncLog.findFirst({
+    where: { job: "cron_cursor" },
+    orderBy: { ranAt: "desc" },
+  });
+  let cursor = Number(state?.detail ?? 0) || 0;
+
+  let processed = 0;
+  let done = false;
   while (Date.now() - started < budgetMs) {
-    const res = await syncFormBatch(cursor);
-    batches++;
+    const res = await enrichBatch(cursor);
+    processed += res.processed;
     if (res.nextCursor === null) {
       cursor = 0;
+      done = true;
       break;
     }
     cursor = res.nextCursor;
   }
 
-  if (squad.fixture) await recomputeProjections(squad.fixture);
+  await prisma.syncLog.create({ data: { job: "cron_cursor", status: "ok", detail: String(cursor) } });
+
+  const updated = fixture ? await recomputeFromPublic(fixture) : 0;
 
   return NextResponse.json({
     status: "ok",
-    cards: squad.cards,
-    fixture: squad.fixture,
-    formBatchesRun: batches,
-    playersPerBatch: FORM_BATCH_SIZE,
-    remainingCursor: cursor,
+    fixture,
+    playersEnriched: processed,
+    completedFullPass: done,
+    resumeCursor: cursor,
+    projections: updated,
   });
 });

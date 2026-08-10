@@ -35,6 +35,12 @@ type ApiPlayer = {
   activeInjuries: { status: string | null; expectedEndDate: string | null }[] | null;
   activeSuspensions: { reason: string | null; endDate: string | null }[] | null;
   nextClassicFixtureProjectedScore: number | null;
+  lastFiveSo5Appearances: number | null;
+  lastFifteenSo5Appearances: number | null;
+  seasonAppearances: number | null;
+  avgL5: number | null;
+  avgL15: number | null;
+  avgL10Played: number | null;
   rawPlayerGameScores: (number | null)[] | null;
 };
 
@@ -116,6 +122,12 @@ async function enrichPlayers(slugs: string[]): Promise<void> {
         suspended: Boolean(suspension),
         sorareProjection: p.nextClassicFixtureProjectedScore ?? null,
         recentScores: JSON.stringify(scores),
+        app5: p.lastFiveSo5Appearances ?? null,
+        app15: p.lastFifteenSo5Appearances ?? null,
+        seasonAppearances: p.seasonAppearances ?? null,
+        avgL5: p.avgL5 ?? null,
+        avgL15: p.avgL15 ?? null,
+        avgL10Played: p.avgL10Played ?? null,
         enrichedAt: new Date(),
       },
     });

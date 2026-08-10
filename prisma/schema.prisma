@@ -28,18 +28,30 @@ model Player {
   updatedAt    DateTime  @updatedAt
 
   // Filled by the public (unauthenticated) Sorare API — see lib/sorare/publicClient.ts.
-  pictureUrl        String?
-  country           String?
-  shirtNumber       Int?
+  pictureUrl       String?
+  country          String?
+  shirtNumber      Int?
   /// Sorare's own projection for the next fixture. Kept distinct from our
   /// computed Projection.expectedScore so the two can be compared rather than
   /// one silently overwriting the other.
-  sorareProjection  Float?
+  sorareProjection Float?
   /// Last few So5 scores, newest first, JSON-encoded. Powers the form
   /// sparkline without needing a row per game — Appearance still holds the
   /// full per-game detail when an authenticated sync has run.
-  recentScores      String?
-  enrichedAt        DateTime?
+  recentScores     String?
+  enrichedAt       DateTime?
+
+  /// Appearances in the club's last 5 / 15 games. This is the playing-time
+  /// signal the public API gives us in place of per-game minutes, and it's
+  /// what the start probability is built from (see projections.ts).
+  app5              Int?
+  app15             Int?
+  seasonAppearances Int?
+  /// Sorare's own rolling averages. avgL10Played only counts games actually
+  /// played, so it reads as "how good when he plays" rather than "how often".
+  avgL5             Float?
+  avgL15            Float?
+  avgL10Played      Float?
   cards             Card[]
   appearances       Appearance[]
   projections       Projection[]
@@ -81,6 +93,12 @@ model Fixture {
   startDate DateTime?
   endDate   DateTime?
   state     String?
+
+  /// When line-ups lock. The whole point of the game-week view: everything
+  /// else is advice, this is the deadline it has to beat.
+  cutOffDate  DateTime?
+  displayName String?
+  gameWeek    Int?
 }
 
 model Appearance {

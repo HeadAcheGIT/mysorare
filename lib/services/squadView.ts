@@ -16,7 +16,17 @@ function parseScores(raw: string | null): number[] {
 
 const rank = (c: SquadCard) => c.expected ?? c.sorareProjection ?? c.l10 ?? -1;
 
+/**
+ * The game week to plan against: the next one still open for line-ups, since
+ * that's the only one you can act on. Falls back to the most recent when
+ * nothing is open (or before fixtures have ever been synced).
+ */
 export async function currentFixture(): Promise<string | null> {
+  const open = await prisma.fixture.findFirst({
+    where: { cutOffDate: { gt: new Date() } },
+    orderBy: { cutOffDate: "asc" },
+  });
+  if (open) return open.slug;
   const row = await prisma.fixture.findFirst({ orderBy: { startDate: "desc" } });
   return row?.slug ?? null;
 }
