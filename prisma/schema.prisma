@@ -8,27 +8,42 @@ datasource db {
 }
 
 model Club {
-  slug    String   @id
-  name    String
-  country String?
-  players Player[]
+  slug       String   @id
+  name       String
+  country    String?
+  pictureUrl String?
+  players    Player[]
 }
 
 model Player {
-  slug         String       @id
+  slug         String    @id
   displayName  String
   position     String
   age          Int?
   clubSlug     String?
-  club         Club?        @relation(fields: [clubSlug], references: [slug])
+  club         Club?     @relation(fields: [clubSlug], references: [slug])
   injuryStatus String?
   injuryUntil  DateTime?
-  suspended    Boolean      @default(false)
-  updatedAt    DateTime     @updatedAt
-  cards        Card[]
-  appearances  Appearance[]
-  projections  Projection[]
-  overrides    Override[]
+  suspended    Boolean   @default(false)
+  updatedAt    DateTime  @updatedAt
+
+  // Filled by the public (unauthenticated) Sorare API — see lib/sorare/publicClient.ts.
+  pictureUrl        String?
+  country           String?
+  shirtNumber       Int?
+  /// Sorare's own projection for the next fixture. Kept distinct from our
+  /// computed Projection.expectedScore so the two can be compared rather than
+  /// one silently overwriting the other.
+  sorareProjection  Float?
+  /// Last few So5 scores, newest first, JSON-encoded. Powers the form
+  /// sparkline without needing a row per game — Appearance still holds the
+  /// full per-game detail when an authenticated sync has run.
+  recentScores      String?
+  enrichedAt        DateTime?
+  cards             Card[]
+  appearances       Appearance[]
+  projections       Projection[]
+  overrides         Override[]
   projectionSources ProjectionSource[]
 }
 
@@ -43,6 +58,20 @@ model Card {
   serialNumber Int?
   bonus        Float    @default(0)
   updatedAt    DateTime @updatedAt
+
+  /// Where this card came from: "csv" (SorareScore gallery export) or "api"
+  /// (authenticated Sorare sync). Lets an import replace only what it owns,
+  /// so a CSV refresh can drop sold cards without touching API-synced ones.
+  source String @default("api")
+
+  // Valuations from the SorareScore export, in EUR. Null when the card came
+  // from the API sync, which doesn't carry these.
+  price          Float?
+  floorPrice     Float?
+  estimatedPrice Float?
+  boughtPrice    Float?
+  /// SorareScore's 10-game average for this card's player at export time.
+  l10            Float?
 
   @@index([playerSlug])
 }
@@ -76,7 +105,7 @@ model Projection {
   player        Player   @relation(fields: [playerSlug], references: [slug])
   fixtureSlug   String
   pStart        Float    @default(0)
-  confidence    Float    @default(0)   // 0-1, how much the sources agree — see ProjectionSource
+  confidence    Float    @default(0) // 0-1, how much the sources agree — see ProjectionSource
   expectedScore Float    @default(0)
   floorScore    Float    @default(0)
   l5            Float?
@@ -99,7 +128,7 @@ model ProjectionSource {
   playerSlug  String
   player      Player   @relation(fields: [playerSlug], references: [slug])
   fixtureSlug String
-  source      String   // "internal_form" | "injury_status" | "fixture_congestion" | "squad_depth" | "external_probable"
+  source      String // "internal_form" | "injury_status" | "fixture_congestion" | "squad_depth" | "external_probable"
   pStart      Float?
   weight      Float    @default(1)
   detail      String?

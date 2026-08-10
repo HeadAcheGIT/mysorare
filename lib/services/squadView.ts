@@ -1,27 +1,20 @@
 import { prisma } from "../prisma";
+import type { SquadCard } from "../types";
 
-export interface SquadCard {
-  cardSlug: string;
-  playerSlug: string;
-  name: string;
-  position: string;
-  rarity: string;
-  season: number | null;
-  inSeason: boolean;
-  serial: number | null;
-  bonus: number;
-  club: string | null;
-  clubSlug: string | null;
-  injury: string | null;
-  pStart: number | null;
-  confidence: number | null;
-  expected: number | null;
-  floor: number | null;
-  l5: number | null;
-  l15: number | null;
-  note: string | null;
-  excluded: boolean;
+export type { SquadCard };
+
+
+function parseScores(raw: string | null): number[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((n): n is number => typeof n === "number") : [];
+  } catch {
+    return [];
+  }
 }
+
+const rank = (c: SquadCard) => c.expected ?? c.sorareProjection ?? c.l10 ?? -1;
 
 export async function currentFixture(): Promise<string | null> {
   const row = await prisma.fixture.findFirst({ orderBy: { startDate: "desc" } });
@@ -66,7 +59,9 @@ export async function getSquadView(
         bonus: c.bonus,
         club: club?.name ?? null,
         clubSlug: p.clubSlug,
+        clubPicture: club?.pictureUrl ?? null,
         injury: p.injuryStatus,
+        suspended: p.suspended,
         pStart: ov?.pStart ?? proj?.pStart ?? null,
         confidence: proj?.confidence ?? null,
         expected: ov?.expectedScore ?? proj?.expectedScore ?? null,
@@ -75,10 +70,25 @@ export async function getSquadView(
         l15: proj?.l15 ?? null,
         note: ov?.note ?? proj?.note ?? null,
         excluded: ov?.exclude ?? false,
+
+        picture: p.pictureUrl,
+        country: p.country,
+        age: p.age,
+        shirtNumber: p.shirtNumber,
+        sorareProjection: p.sorareProjection,
+        recentScores: parseScores(p.recentScores),
+        l10: c.l10,
+        price: c.price,
+        floorPrice: c.floorPrice,
+        estimatedPrice: c.estimatedPrice,
+        boughtPrice: c.boughtPrice,
       };
     })
     .filter((x): x is SquadCard => x != null)
-    .sort((a, b) => (b.expected ?? -1) - (a.expected ?? -1));
+    // Best available signal first: our projection, else Sorare's, else the
+    // CSV's 10-game average — so the list stays usefully ordered even before
+    // any projection has been computed.
+    .sort((a, b) => rank(b) - rank(a));
 
   return { fixture: resolvedFixture, cards: out };
 }

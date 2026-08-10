@@ -26,6 +26,11 @@ export default function middleware(req: Request) {
 
   const expected = process.env.APP_PASSWORD;
   if (!expected) {
+    // Locally there's nothing to protect and no deploy to configure, so an
+    // unset password shouldn't block `next dev`. In production it's the only
+    // thing standing between this app and the public internet, so refuse to
+    // serve rather than fail open.
+    if (process.env.NODE_ENV !== "production") return next();
     return new Response(
       "APP_PASSWORD n'est pas configuré — ajoute-le dans les variables d'environnement Vercel, puis redéploie.",
       { status: 500 }
