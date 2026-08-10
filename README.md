@@ -45,6 +45,14 @@ git push -u origin main
 | `SORARE_AUD` | `sorare-cockpit` |
 | `SORARE_API_KEY` | vide pour commencer |
 | `CRON_SECRET` | une chaîne aléatoire (`openssl rand -hex 32`) |
+| `APP_PASSWORD` | le mot de passe qui protège l'app (voir ci-dessous) |
+
+`APP_PASSWORD` est **obligatoire** : l'app est publique sur son URL Vercel, et
+c'est la seule chose qui la protège (`middleware.ts` demande une
+authentification HTTP sur toutes les pages et routes API). Sans cette variable,
+chaque requête renvoie une erreur 500 — délibérément, plutôt que de laisser
+l'app ouverte. Au premier accès, le navigateur affiche une fenêtre de connexion :
+n'importe quel nom d'utilisateur convient, seul le mot de passe est vérifié.
 
 3. **Settings → Functions → Fluid Compute** : active-le. Sans ça, le budget
    d'exécution par fonction reste très court sur Hobby ; avec Fluid Compute
@@ -52,17 +60,21 @@ git push -u origin main
    la synchro par lots ait le temps de tourner.
 4. Déploie.
 
-### 4. Crée les tables
+### 4. Les tables se créent toutes seules
 
-Depuis ta machine, une seule fois (ou dans le terminal intégré de Vercel) :
+Rien à faire : le build lance `prisma migrate deploy`, qui applique les
+migrations de `prisma/migrations/` sur la base Neon à chaque déploiement.
+
+Si `DATABASE_URL` n'est pas encore configurée, l'étape est simplement ignorée
+et le build passe quand même — c'est l'app qui signalera la base manquante au
+moment de l'utiliser, là où c'est exploitable.
+
+Après avoir modifié `prisma/schema.prisma`, génère la migration correspondante
+et commite-la ; elle s'appliquera au déploiement suivant :
 
 ```bash
-npm install
-npx prisma db push
+npx prisma migrate dev --name decris-ton-changement
 ```
-
-Ça applique `prisma/schema.prisma` sur la base Neon. Pas besoin de le refaire
-sauf si tu modifies le schéma.
 
 ### 5. Premier lancement
 
