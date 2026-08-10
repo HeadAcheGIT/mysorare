@@ -19,6 +19,11 @@ const REALM = "Sorare Cockpit";
  * route" behavior without the bad import.
  */
 export default function middleware(req: Request) {
+  // Vercel Cron authenticates with `Bearer <CRON_SECRET>`, which this Basic
+  // Auth gate would reject — the route checks that secret itself, so let it
+  // through rather than silently breaking the daily sync.
+  if (new URL(req.url).pathname === "/api/cron") return next();
+
   const expected = process.env.APP_PASSWORD;
   if (!expected) {
     return new Response(

@@ -16,8 +16,12 @@ export const maxDuration = 60;
  * finish the rest immediately instead of waiting for tomorrow's cron.
  */
 export const GET = withErrorHandling(async (req: NextRequest) => {
+  // The app-wide Basic Auth middleware deliberately skips this route so Vercel
+  // Cron can reach it, making this check the only thing protecting it — so it
+  // fails closed when the secret is unset rather than letting anyone trigger a
+  // full sync.
   const auth = req.headers.get("authorization");
-  if (config.cronSecret && auth !== `Bearer ${config.cronSecret}`) {
+  if (!config.cronSecret || auth !== `Bearer ${config.cronSecret}`) {
     throw new ApiError("unauthorized", 401);
   }
 
