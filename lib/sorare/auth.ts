@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { config } from "../config";
+import { assertConfigured, config } from "../config";
 import { prisma } from "../prisma";
 
 export class SorareAuthError extends Error {}
@@ -60,6 +60,7 @@ export async function getToken(force = false): Promise<string> {
     if (cached) return cached;
   }
 
+  assertConfigured(["sorareEmail", "sorarePassword"]);
   const query = SIGN_IN(config.sorareAud);
   let data: any = await post({
     operationName: "SignInMutation",

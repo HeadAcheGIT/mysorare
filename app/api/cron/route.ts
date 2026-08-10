@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { syncSquadAndFixtures, syncFormBatch, recomputeProjections, FORM_BATCH_SIZE } from "@/lib/services/sync";
 import { config } from "@/lib/config";
+import { ApiError, withErrorHandling } from "@/lib/apiHandler";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -14,10 +15,10 @@ export const maxDuration = 60;
  * whatever's been refreshed so far. Tap "Refresh" in the app any time to
  * finish the rest immediately instead of waiting for tomorrow's cron.
  */
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = req.headers.get("authorization");
   if (config.cronSecret && auth !== `Bearer ${config.cronSecret}`) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    throw new ApiError("unauthorized", 401);
   }
 
   const started = Date.now();
@@ -46,4 +47,4 @@ export async function GET(req: NextRequest) {
     playersPerBatch: FORM_BATCH_SIZE,
     remainingCursor: cursor,
   });
-}
+});

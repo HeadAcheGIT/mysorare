@@ -3,3 +3,4 @@
 node_modules/
 .next/
 schema.graphql
+tsconfig.tsbuildinfo

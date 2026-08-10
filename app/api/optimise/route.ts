@@ -2,17 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSquadView } from "@/lib/services/squadView";
 import { optimise, type Candidate } from "@/lib/services/optimizer";
 import { COMPETITIONS } from "@/lib/services/rules";
+import { ApiError, withErrorHandling } from "@/lib/apiHandler";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
-  const body = await req.json();
+export const POST = withErrorHandling(async (req: NextRequest) => {
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body.competition !== "string") {
+    throw new ApiError("competition requise");
+  }
+
   const rules = COMPETITIONS[body.competition];
   if (!rules) {
-    return NextResponse.json(
-      { error: `Unknown competition '${body.competition}'. Add it to lib/services/rules.ts.` },
-      { status: 404 }
-    );
+    throw new ApiError(`Compétition inconnue '${body.competition}'. Ajoute-la dans lib/services/rules.ts.`, 404);
   }
 
   const data = await getSquadView(body.fixture ?? null, null);
@@ -53,4 +55,4 @@ export async function POST(req: NextRequest) {
       isCaptain: c.isCaptain,
     })),
   });
-}
+});

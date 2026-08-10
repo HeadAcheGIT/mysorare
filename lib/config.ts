@@ -18,6 +18,22 @@ export const config = {
   startMinutesThreshold: 60,
 } as const;
 
+/**
+ * Env vars are only actually needed once a service touches Sorare/API-Football,
+ * not at module load (routes that don't need them must still work). Call this
+ * right before the first request that depends on the given keys so a missing
+ * var fails with a clear message instead of a cryptic downstream error.
+ */
+export function assertConfigured(keys: (keyof typeof config)[]) {
+  const missing = keys.filter((k) => !config[k]);
+  if (missing.length) {
+    throw new Error(
+      `Variable(s) d'environnement manquante(s) : ${missing.join(", ")}. ` +
+        `Vérifie la configuration dans les paramètres du projet Vercel, puis redéploie.`
+    );
+  }
+}
+
 // Position baselines, used only when a player has almost no history.
 export const POSITION_BASELINE: Record<
   string,

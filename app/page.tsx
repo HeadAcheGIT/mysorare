@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { apiFetch, ApiFetchError } from "@/lib/apiFetch";
 
 const POS: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MIL", Forward: "ATT" };
 
@@ -40,6 +41,16 @@ type OptimiseResult = {
   }[];
 };
 
+type SavedLineup = {
+  id: number;
+  fixture: string;
+  competition: string;
+  cards: string[];
+  captain: string | null;
+  projectedTotal: number;
+  createdAt: string;
+};
+
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 const num = (v: number | null) => (v == null ? "—" : v.toFixed(1));
 
@@ -52,6 +63,10 @@ const RARITY_CLASS: Record<string, string> = {
   super_rare: "text-superrare border-superrare",
   unique: "text-white border-white",
 };
+
+function errorMessage(err: unknown): string {
+  return err instanceof ApiFetchError || err instanceof Error ? err.message : "Erreur inattendue";
+}
 
 export default function Page() {
   const [tab, setTab] = useState<"lineup" | "squad" | "market" | "sync">("lineup");
@@ -68,6 +83,11 @@ export default function Page() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [checkingLineups, setCheckingLineups] = useState(false);
   const [lineupCheckResult, setLineupCheckResult] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  // Saved lineups
+  const [savedLineups, setSavedLineups] = useState<SavedLineup[]>([]);
+  const [savingLineup, setSavingLineup] = useState(false);
 
   // Market tab
   const [marketQuery, setMarketQuery] = useState("");
@@ -79,22 +99,47 @@ export default function Page() {
   const [prices, setPrices] = useState<Record<string, { floorByRarity: Record<string, number | null>; listedCount: number } | "loading" | "error">>({});
 
   const loadSquad = useCallback(async () => {
-    const r = await fetch("/api/squad");
-    const data = await r.json();
-    setFixture(data.fixture);
-    setSquad(data.cards);
+    try {
+      const data = await apiFetch<{ fixture: string | null; cards: SquadCard[] }>("/api/squad");
+      setFixture(data.fixture);
+      setSquad(data.cards);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }, []);
 
   const loadCompetitions = useCallback(async () => {
-    const r = await fetch("/api/competitions");
-    const data = await r.json();
-    setCompetitions(data);
-    if (data.length && !competition) setCompetition(data[0].name);
+    try {
+      const data = await apiFetch<{ name: string }[]>("/api/competitions");
+      setCompetitions(data);
+      if (data.length && !competition) setCompetition(data[0].name);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }, [competition]);
 
   const loadLogs = useCallback(async () => {
-    const r = await fetch("/api/sync-log");
-    setLogs(await r.json());
+    try {
+      setLogs(await apiFetch("/api/sync-log"));
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
+  const loadWatchlist = useCallback(async () => {
+    try {
+      setWatchlist(await apiFetch("/api/watchlist"));
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
+  const loadSavedLineups = useCallback(async (fx: string) => {
+    try {
+      setSavedLineups(await apiFetch(`/api/lineups?fixture=${encodeURIComponent(fx)}`));
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }, []);
 
   useEffect(() => {
@@ -105,22 +150,19 @@ export default function Page() {
   useEffect(() => {
     if (tab === "sync") loadLogs();
     if (tab === "market") loadWatchlist();
-  }, [tab, loadLogs]);
-
-  async function loadWatchlist() {
-    const r = await fetch("/api/watchlist");
-    setWatchlist(await r.json());
-  }
+    if (tab === "lineup" && fixture) loadSavedLineups(fixture);
+  }, [tab, fixture, loadLogs, loadWatchlist, loadSavedLineups]);
 
   async function checkPrice(slug: string) {
     setPrices((p) => ({ ...p, [slug]: "loading" }));
     try {
-      const r = await fetch(`/api/market/price?slug=${encodeURIComponent(slug)}`);
-      const data = await r.json();
-      if (data.error) throw new Error(data.error);
+      const data = await apiFetch<{ floorByRarity: Record<string, number | null>; listedCount: number }>(
+        `/api/market/price?slug=${encodeURIComponent(slug)}`
+      );
       setPrices((p) => ({ ...p, [slug]: data }));
-    } catch {
+    } catch (err) {
       setPrices((p) => ({ ...p, [slug]: "error" }));
+      setError(errorMessage(err));
     }
   }
 
@@ -132,39 +174,105 @@ export default function Page() {
     if (marketQuery.trim().length < 2) return;
     setMarketLoading(true);
     try {
-      const r = await fetch(`/api/market/search?q=${encodeURIComponent(marketQuery.trim())}`);
-      setMarketResults(await r.json());
+      setMarketResults(await apiFetch(`/api/market/search?q=${encodeURIComponent(marketQuery.trim())}`));
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setMarketLoading(false);
     }
   }
 
   async function addToWatchlist(p: { slug: string; name: string; position: string; club: string | null }) {
-    await fetch("/api/watchlist", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ playerSlug: p.slug, label: p.name, position: p.position, club: p.club }),
-    });
-    await loadWatchlist();
+    try {
+      await apiFetch("/api/watchlist", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ playerSlug: p.slug, label: p.name, position: p.position, club: p.club }),
+      });
+      await loadWatchlist();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
   async function removeFromWatchlist(slug: string) {
-    await fetch(`/api/watchlist?playerSlug=${encodeURIComponent(slug)}`, { method: "DELETE" });
-    await loadWatchlist();
+    try {
+      await apiFetch(`/api/watchlist?playerSlug=${encodeURIComponent(slug)}`, { method: "DELETE" });
+      await loadWatchlist();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
   async function runOptimise() {
     if (!competition) return;
     setBuilding(true);
     try {
-      const r = await fetch("/api/optimise", {
+      const result = await apiFetch<OptimiseResult>("/api/optimise", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ competition }),
       });
-      setLineup(await r.json());
+      setLineup(result);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setBuilding(false);
+    }
+  }
+
+  async function saveLineup() {
+    if (!lineup || lineup.error || !lineup.fixture) return;
+    setSavingLineup(true);
+    try {
+      await apiFetch("/api/lineups", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          fixture: lineup.fixture,
+          competition: lineup.competition,
+          cardSlugs: lineup.cards.map((c) => c.cardSlug),
+          captain: lineup.cards.find((c) => c.isCaptain)?.cardSlug ?? null,
+          projectedTotal: lineup.projectedTotal ?? 0,
+        }),
+      });
+      await loadSavedLineups(lineup.fixture);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSavingLineup(false);
+    }
+  }
+
+  function loadSavedLineup(saved: SavedLineup) {
+    const cards = saved.cards.map((slug) => {
+      const c = squad.find((s) => s.cardSlug === slug);
+      return {
+        cardSlug: slug,
+        name: c?.name ?? slug,
+        position: c?.position ?? "",
+        club: c?.club ?? null,
+        expected: c?.expected ?? 0,
+        pStart: c?.pStart ?? 0,
+        l15: c?.l15 ?? null,
+        isCaptain: slug === saved.captain,
+      };
+    });
+    setLineup({
+      fixture: saved.fixture,
+      competition: saved.competition,
+      projectedTotal: saved.projectedTotal,
+      captain: saved.captain,
+      cards,
+    });
+  }
+
+  async function deleteSavedLineup(id: number) {
+    try {
+      await apiFetch(`/api/lineups?id=${id}`, { method: "DELETE" });
+      setSavedLineups((list) => list.filter((l) => l.id !== id));
+    } catch (err) {
+      setError(errorMessage(err));
     }
   }
 
@@ -172,23 +280,35 @@ export default function Page() {
     setSyncing(true);
     setProgress(null);
     try {
-      const squadRes = await fetch("/api/sync", { method: "POST" }).then((r) => r.json());
+      const squadRes = await apiFetch<{ status: string; detail?: string; cards?: number; fixture?: string | null }>(
+        "/api/sync",
+        { method: "POST" }
+      );
+      if (squadRes.status === "error") throw new Error(squadRes.detail ?? "Échec de la synchro effectif");
+
       let cursor = 0;
       let total = squadRes.cards ?? 0;
       for (;;) {
-        const batch = await fetch("/api/sync/batch", {
+        const batch = await apiFetch<{
+          status: string;
+          detail?: string;
+          total?: number;
+          processed?: number;
+          nextCursor: number | null;
+        }>("/api/sync/batch", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ cursor }),
-        }).then((r) => r.json());
+        });
+        if (batch.status === "error") throw new Error(batch.detail ?? "Échec de la synchro forme");
         total = batch.total ?? total;
         cursor = (cursor || 0) + (batch.processed ?? 0);
         setProgress({ done: cursor, total });
-        if (batch.nextCursor === null || batch.status === "error") break;
+        if (batch.nextCursor === null) break;
         cursor = batch.nextCursor;
       }
       if (squadRes.fixture) {
-        await fetch("/api/recompute", {
+        await apiFetch("/api/recompute", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ fixture: squadRes.fixture }),
@@ -196,6 +316,8 @@ export default function Page() {
       }
       await loadSquad();
       await loadLogs();
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setSyncing(false);
     }
@@ -208,11 +330,14 @@ export default function Page() {
       let cursor = 0;
       let totalFound = 0;
       for (;;) {
-        const batch = await fetch("/api/lineup-check", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ cursor }),
-        }).then((r) => r.json());
+        const batch = await apiFetch<{ status: string; detail?: string; found?: number; nextCursor: number | null }>(
+          "/api/lineup-check",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ cursor }),
+          }
+        );
         if (batch.status === "error") {
           setLineupCheckResult(`Erreur : ${batch.detail}`);
           break;
@@ -225,6 +350,8 @@ export default function Page() {
         cursor = batch.nextCursor;
       }
       await loadSquad();
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setCheckingLineups(false);
     }
@@ -247,6 +374,18 @@ export default function Page() {
           </div>
         </div>
       </header>
+
+      {error && (
+        <div
+          role="alert"
+          className="sticky top-[57px] z-10 bg-warn/10 border-b border-warn px-4 py-2 flex items-start justify-between gap-3"
+        >
+          <p className="font-mono text-xs text-warn">{error}</p>
+          <button onClick={() => setError(null)} aria-label="Fermer l'erreur" className="text-warn text-xs shrink-0">
+            ✕
+          </button>
+        </div>
+      )}
 
       <main className="flex-1 px-4 py-4 pb-24 max-w-lg w-full mx-auto">
         {tab === "lineup" && (
@@ -276,10 +415,19 @@ export default function Page() {
 
             {lineup && !lineup.error && (
               <>
-                <p className="font-mono text-xs text-muted mb-3">
-                  <span className="font-display text-2xl text-flood align-middle">{lineup.projectedTotal}</span>
-                  {" "}pts projetés · {lineup.competition} · game week {lineup.fixture}
-                </p>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <p className="font-mono text-xs text-muted">
+                    <span className="font-display text-2xl text-flood align-middle">{lineup.projectedTotal}</span>
+                    {" "}pts projetés · {lineup.competition} · game week {lineup.fixture}
+                  </p>
+                  <button
+                    onClick={saveLineup}
+                    disabled={savingLineup}
+                    className="shrink-0 text-xs border border-line rounded-md px-2 py-1.5 disabled:opacity-50"
+                  >
+                    {savingLineup ? "…" : "Sauvegarder"}
+                  </button>
+                </div>
                 <ol className="flex flex-col gap-2">
                   {lineup.cards.map((c) => (
                     <li
@@ -316,6 +464,37 @@ export default function Page() {
             )}
 
             {!lineup && <p className="font-mono text-sm text-muted">Choisis une compétition et lance « Composer ».</p>}
+
+            {savedLineups.length > 0 && (
+              <div className="mt-6">
+                <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">Compos sauvegardées</h2>
+                <ul className="flex flex-col gap-2">
+                  {savedLineups.map((l) => (
+                    <li key={l.id} className="p-3 rounded-lg bg-ink2 border border-line flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold truncate">
+                          {l.competition} · <span className="text-flood">{l.projectedTotal}</span> pts
+                        </p>
+                        <p className="text-xs text-muted truncate">
+                          {new Date(l.createdAt).toLocaleString("fr-FR")} · {l.cards.length} cartes
+                        </p>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <button onClick={() => loadSavedLineup(l)} className="text-xs border border-line rounded-md px-2 py-1.5">
+                          Charger
+                        </button>
+                        <button
+                          onClick={() => deleteSavedLineup(l.id)}
+                          className="text-xs text-warn border border-warn rounded-md px-2 py-1.5"
+                        >
+                          Suppr.
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </section>
         )}
 

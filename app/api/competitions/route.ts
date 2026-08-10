@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { COMPETITIONS } from "@/lib/services/rules";
+import { withErrorHandling } from "@/lib/apiHandler";
 
-export async function GET() {
+export const GET = withErrorHandling(async () => {
   const list = Object.values(COMPETITIONS).map((r) => ({
     name: r.name,
     size: r.size,
@@ -10,4 +11,4 @@ export async function GET() {
     minInSeason: r.minInSeason,
   }));
   return NextResponse.json(list);
-}
+});
