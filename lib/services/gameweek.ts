@@ -96,36 +96,41 @@ export async function recomputeFromPublic(fixtureSlug: string): Promise<number> 
     return { playerSlug: p.slug, form };
   });
 
-  // One statement instead of ~400 round trips: Neon is remote, and a
-  // per-player upsert loop here was the slowest thing in the pipeline.
-  await prisma.$transaction(
-    rows.map(({ playerSlug, form }) =>
-      prisma.projection.upsert({
-        where: { playerSlug_fixtureSlug: { playerSlug, fixtureSlug } },
-        create: {
-          playerSlug,
-          fixtureSlug,
-          pStart: form.pStart,
-          confidence: form.confidence,
-          expectedScore: form.expected,
-          floorScore: form.floor,
-          l5: form.l5,
-          l15: form.l15,
-          note: form.note || null,
-        },
-        update: {
-          pStart: form.pStart,
-          confidence: form.confidence,
-          expectedScore: form.expected,
-          floorScore: form.floor,
-          l5: form.l5,
-          l15: form.l15,
-          note: form.note || null,
-          computedAt: now,
-        },
-      })
-    )
-  );
+  // Batched rather than one 400-statement transaction: Neon is remote, and a
+  // single transaction that size risks outliving the function timeout and
+  // rolling the whole recompute back. Chunks commit independently, so a slow
+  // run still leaves most projections updated.
+  const CHUNK = 50;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    await prisma.$transaction(
+      rows.slice(i, i + CHUNK).map(({ playerSlug, form }) =>
+        prisma.projection.upsert({
+          where: { playerSlug_fixtureSlug: { playerSlug, fixtureSlug } },
+          create: {
+            playerSlug,
+            fixtureSlug,
+            pStart: form.pStart,
+            confidence: form.confidence,
+            expectedScore: form.expected,
+            floorScore: form.floor,
+            l5: form.l5,
+            l15: form.l15,
+            note: form.note || null,
+          },
+          update: {
+            pStart: form.pStart,
+            confidence: form.confidence,
+            expectedScore: form.expected,
+            floorScore: form.floor,
+            l5: form.l5,
+            l15: form.l15,
+            note: form.note || null,
+            computedAt: now,
+          },
+        })
+      )
+    );
+  }
 
   await prisma.syncLog.create({
     data: { job: "projections", status: "ok", detail: `${rows.length} joueurs · ${fixtureSlug}` },
