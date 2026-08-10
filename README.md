@@ -4,16 +4,47 @@ Effectif, probabilité de titularisation, projections, et compos optimisées par
 compétition. Next.js + Postgres (Neon) + Vercel, installable comme une app sur
 ton téléphone. Zéro machine à toi qui tourne.
 
+## Comment l'app récupère tes données
+
+Deux sources, aucune des deux ne dépend d'une connexion Sorare :
+
+- **Ta galerie** vient de l'export CSV « my gallery » de SorareScore, importé
+  depuis l'onglet **Données**. C'est la seule information que l'API Sorare
+  réserve aux comptes connectés, et s'y connecter depuis Vercel est peu fiable :
+  Sorare redéclenche la double authentification dès que l'IP change, ce qui
+  arrive à chaque exécution en serverless.
+- **Tout le reste** — photos, clubs et écussons, blessures, suspensions, scores
+  récents, projection officielle Sorare, calendrier des game weeks — vient de
+  l'API **publique** de Sorare, qui ne demande aucun jeton.
+
+La connexion Sorare reste disponible dans l'onglet Données, mais elle est
+optionnelle : l'app fonctionne entièrement sans.
+
 ## Ce que tu obtiens sur le plan gratuit
 
-- **App accessible partout**, en HTTPS, sur `https://ton-projet.vercel.app`.
+- **App accessible partout**, en HTTPS, sur `https://ton-projet.vercel.app`,
+  protégée par mot de passe.
+- **Onglet Semaine** : compte à rebours jusqu'à la clôture des compos, et une
+  liste courte de ce sur quoi agir (indisponibles, valeurs sûres, joueurs en
+  progression, cartes à vendre, poids morts, moins-values).
+- **Galerie** : tes cartes avec photos, écussons, courbe de forme, filtres par
+  poste, rareté et in-season, tri par score, forme, valeur ou nom.
+- **Projections sans connexion** : calculées à partir du taux d'apparition sur
+  les 5 et 15 derniers matchs du club et de la moyenne sur les matchs
+  réellement joués, mélangées à la projection Sorare quand elle existe.
 - **Synchro automatique une fois par jour** (limite du plan Hobby de Vercel :
-  les cron jobs ne peuvent tourner qu'une fois par jour, et Vercel peut les
-  déclencher n'importe quand dans l'heure programmée, pas à la seconde
-  près).
-- **Bouton « Rafraîchir » dans l'app** pour forcer une synchro complète à la
-  demande, n'importe quand.
-- **Base Postgres gratuite** via Neon (généreux en usage perso).
+  un cron par jour, déclenché quelque part dans l'heure programmée). Elle
+  reprend là où la précédente s'est arrêtée, pour rester sous la limite de
+  20 requêtes/minute de l'API publique.
+- **Base Postgres gratuite** via Neon.
+
+### Une clé API Sorare (gratuite) débloque le reste
+
+L'API publique plafonne la complexité des requêtes à 500 (30 000 avec une clé)
+et à 20 requêtes/minute (600 avec une clé). Concrètement, sans clé le
+calendrier détaillé des matchs est hors budget et l'enrichissement se fait par
+lots de 15 joueurs. Renseigner `SORARE_API_KEY` accélère tout d'un ordre de
+grandeur — la demande se fait auprès de Sorare.
 
 ## Déploiement, étape par étape
 
@@ -37,15 +68,21 @@ git push -u origin main
 1. [vercel.com](https://vercel.com) → New Project → importe le repo.
 2. Dans **Settings → Environment Variables**, ajoute :
 
-| Variable | Valeur |
-|---|---|
-| `DATABASE_URL` | la connection string Neon |
-| `SORARE_EMAIL` | ton email Sorare |
-| `SORARE_PASSWORD` | ton mot de passe (change-le si tu l'as déjà partagé quelque part) |
-| `SORARE_AUD` | `sorare-cockpit` |
-| `SORARE_API_KEY` | vide pour commencer |
-| `CRON_SECRET` | une chaîne aléatoire (`openssl rand -hex 32`) |
-| `APP_PASSWORD` | le mot de passe qui protège l'app (voir ci-dessous) |
+| Variable | Obligatoire | Valeur |
+|---|---|---|
+| `DATABASE_URL` | oui | la connection string Neon |
+| `APP_PASSWORD` | oui | le mot de passe qui protège l'app (voir ci-dessous) |
+| `CRON_SECRET` | oui | une chaîne aléatoire **ASCII uniquement** (`openssl rand -hex 32`) |
+| `SORARE_AUD` | non | `sorare-cockpit` |
+| `SORARE_API_KEY` | non | lève les limites de l'API publique (voir plus haut) |
+| `APIFOOTBALL_KEY` | non | seulement pour le bouton « compos officielles » |
+
+`SORARE_EMAIL` et `SORARE_PASSWORD` ne sont plus nécessaires : la connexion
+Sorare, si tu la veux, se fait directement dans l'app (onglet Données), code à
+6 chiffres compris. Le mot de passe n'est jamais stocké, seul le jeton l'est.
+
+`CRON_SECRET` doit être en ASCII pur : Vercel l'envoie dans un en-tête HTTP et
+refuse de builder si la valeur contient un accent.
 
 `APP_PASSWORD` est **obligatoire** : l'app est publique sur son URL Vercel, et
 c'est la seule chose qui la protège (`middleware.ts` demande une
@@ -78,13 +115,15 @@ npx prisma migrate dev --name decris-ton-changement
 
 ### 5. Premier lancement
 
-Ouvre l'app, onglet **Synchro** → « Rafraîchir toutes les données ». Deux cas :
+1. Ouvre l'app, saisis le mot de passe `APP_PASSWORD`.
+2. Onglet **Données** → « Importer ma galerie » → choisis l'export CSV
+   « my gallery » téléchargé depuis SorareScore. L'import enchaîne
+   automatiquement sur la récupération des photos et des stats.
+3. Onglet **Données** → « Rafraîchir photos et stats » quand tu veux
+   recalculer projections et game week sans réimporter.
 
-- Ça tourne et remplit une barre de progression → tu es bon, va sur l'onglet
-  **Effectif**.
-- `2FA required` dans les logs → va chercher le code reçu par email, mets-le
-  dans `SORARE_OTP` sur Vercel, redéploie, relance la synchro, puis revide
-  `SORARE_OTP` (le token tient 30 jours une fois émis).
+Réimporte un CSV frais après chaque achat ou vente : l'import remplace la
+galerie, les cartes absentes du fichier sont retirées.
 
 ### 6. Installe l'app sur ton téléphone
 
