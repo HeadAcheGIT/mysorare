@@ -61,7 +61,7 @@ export async function getToken(force = false): Promise<string> {
   }
 
   const query = SIGN_IN(config.sorareAud);
-  let data = await post({
+  let data: any = await post({
     operationName: "SignInMutation",
     query,
     variables: {
@@ -71,7 +71,7 @@ export async function getToken(force = false): Promise<string> {
       },
     },
   });
-  let signIn = data?.data?.signIn ?? {};
+  let signIn: any = data?.data?.signIn ?? {};
 
   if (signIn.errors?.length) {
     throw new SorareAuthError(signIn.errors.map((e: { message: string }) => e.message).join("; "));

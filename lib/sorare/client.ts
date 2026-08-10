@@ -74,8 +74,8 @@ export async function* paginate<T = unknown>(
 ): AsyncGenerator<T> {
   let cursor: string | null = null;
   for (;;) {
-    const data = await graphql<any>(query, { ...variables, after: cursor, first: pageSize });
-    let conn = data;
+    const data: any = await graphql<any>(query, { ...variables, after: cursor, first: pageSize });
+    let conn: any = data;
     for (const key of path) conn = conn[key];
     for (const node of conn.nodes ?? []) yield node as T;
     if (!conn.pageInfo?.hasNextPage) return;
