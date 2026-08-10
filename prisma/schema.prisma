@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Club {
+  slug    String   @id
+  name    String
+  country String?
+  players Player[]
+}
+
+model Player {
+  slug         String       @id
+  displayName  String
+  position     String
+  age          Int?
+  clubSlug     String?
+  club         Club?        @relation(fields: [clubSlug], references: [slug])
+  injuryStatus String?
+  injuryUntil  DateTime?
+  suspended    Boolean      @default(false)
+  updatedAt    DateTime     @updatedAt
+  cards        Card[]
+  appearances  Appearance[]
+  projections  Projection[]
+  overrides    Override[]
+  projectionSources ProjectionSource[]
+}
+
+model Card {
+  slug         String   @id
+  assetId      String?
+  playerSlug   String
+  player       Player   @relation(fields: [playerSlug], references: [slug])
+  rarity       String
+  season       Int?
+  inSeason     Boolean  @default(false)
+  serialNumber Int?
+  bonus        Float    @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@index([playerSlug])
+}
+
+model Fixture {
+  slug      String    @id
+  startDate DateTime?
+  endDate   DateTime?
+  state     String?
+}
+
+model Appearance {
+  id          Int       @id @default(autoincrement())
+  playerSlug  String
+  player      Player    @relation(fields: [playerSlug], references: [slug])
+  gameId      String
+  gameDate    DateTime?
+  competition String?
+  minutes     Int       @default(0)
+  started     Boolean   @default(false)
+  onGameSheet Boolean   @default(false)
+  score       Float?
+
+  @@unique([playerSlug, gameId])
+  @@index([playerSlug])
+}
+
+model Projection {
+  id            Int      @id @default(autoincrement())
+  playerSlug    String
+  player        Player   @relation(fields: [playerSlug], references: [slug])
+  fixtureSlug   String
+  pStart        Float    @default(0)
+  confidence    Float    @default(0)   // 0-1, how much the sources agree — see ProjectionSource
+  expectedScore Float    @default(0)
+  floorScore    Float    @default(0)
+  l5            Float?
+  l15           Float?
+  gamesInWeek   Int      @default(1)
+  note          String?
+  computedAt    DateTime @default(now())
+
+  @@unique([playerSlug, fixtureSlug])
+  @@index([fixtureSlug])
+}
+
+/// One source's independent read on a player's start probability for a fixture.
+/// Projection.pStart is the weighted aggregate of these; Projection.confidence
+/// reflects how much they agree. A source with pStart = null doesn't vote on
+/// probability but can still carry a `detail` note (e.g. squad_depth explaining
+/// why it has no reading yet).
+model ProjectionSource {
+  id          Int      @id @default(autoincrement())
+  playerSlug  String
+  player      Player   @relation(fields: [playerSlug], references: [slug])
+  fixtureSlug String
+  source      String   // "internal_form" | "injury_status" | "fixture_congestion" | "squad_depth" | "external_probable"
+  pStart      Float?
+  weight      Float    @default(1)
+  detail      String?
+  fetchedAt   DateTime @default(now())
+
+  @@unique([playerSlug, fixtureSlug, source])
+  @@index([fixtureSlug])
+}
+
+model Override {
+  id            Int      @id @default(autoincrement())
+  playerSlug    String
+  player        Player   @relation(fields: [playerSlug], references: [slug])
+  fixtureSlug   String
+  pStart        Float?
+  expectedScore Float?
+  exclude       Boolean  @default(false)
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@unique([playerSlug, fixtureSlug])
+}
+
+model SavedLineup {
+  id             Int      @id @default(autoincrement())
+  fixtureSlug    String
+  competition    String
+  cardSlugs      String
+  captainSlug    String?
+  projectedTotal Float    @default(0)
+  createdAt      DateTime @default(now())
+}
+
+model SyncLog {
+  id     Int      @id @default(autoincrement())
+  job    String
+  status String
+  detail String?
+  ranAt  DateTime @default(now())
+}
+
+model TokenCache {
+  id        Int      @id @default(1)
+  token     String
+  expiresAt DateTime
+}
+
+model WatchlistItem {
+  id         Int      @id @default(autoincrement())
+  playerSlug String   @unique
+  label      String
+  position   String?
+  club       String?
+  createdAt  DateTime @default(now())
+}
+
+/// Caches the mapping from our own club/player slugs to API-Football's ids,
+/// so we search their /teams and /players endpoints once per entity instead
+/// of on every lineup check (their free tier is 100 requests/day).
+model ExternalTeamMapping {
+  clubSlug          String   @id
+  apiFootballTeamId Int
+  updatedAt         DateTime @updatedAt
+}
+
+model ExternalPlayerMapping {
+  playerSlug          String   @id
+  apiFootballPlayerId Int
+  updatedAt           DateTime @updatedAt
+}
