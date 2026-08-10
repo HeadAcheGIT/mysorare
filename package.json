@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@vercel/functions": "^3.9.2",
     "bcryptjs": "^2.4.3",
     "javascript-lp-solver": "^0.4.24",
     "js-yaml": "^4.1.0",
