@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { publicGraphql, PLAYERS_BY_SLUG, PLAYERS_PER_QUERY } from "../sorare/publicClient";
 
@@ -76,60 +77,81 @@ export async function enrichBatch(
   return { processed, nextCursor, total: players.length };
 }
 
-/** Fetches and stores one query's worth of players. */
+/** Fetches one query's worth of players and writes them in two statements. */
 async function enrichPlayers(slugs: string[]): Promise<void> {
   const data = await publicGraphql<{ players: ApiPlayer[] }>(PLAYERS_BY_SLUG, { slugs });
+  const players = (data.players ?? []).filter((p) => p?.slug);
+  if (!players.length) return;
 
-  for (const p of data.players ?? []) {
-    if (!p?.slug) continue;
+  const now = new Date();
 
-    const club = p.activeClub;
-    if (club?.slug) {
-      await prisma.club.upsert({
-        where: { slug: club.slug },
-        create: {
-          slug: club.slug,
-          name: club.name ?? club.slug,
-          country: club.country?.code ?? null,
-          pictureUrl: club.pictureUrl ?? null,
-        },
-        update: {
-          name: club.name ?? club.slug,
-          country: club.country?.code ?? null,
-          pictureUrl: club.pictureUrl ?? null,
-        },
-      });
-    }
+  // Clubs first: Player.clubSlug is a foreign key, so the club has to exist
+  // before the player row can point at it. Deduplicated because a batch of
+  // team-mates would otherwise hit the same row twice in one statement, which
+  // Postgres rejects outright.
+  const clubs = new Map<string, NonNullable<ApiPlayer["activeClub"]>>();
+  for (const p of players) if (p.activeClub?.slug) clubs.set(p.activeClub.slug, p.activeClub);
 
+  if (clubs.size) {
+    const values = [...clubs.values()].map(
+      (c) => Prisma.sql`(${c.slug}, ${c.name ?? c.slug}, ${c.country?.code ?? null}, ${c.pictureUrl ?? null})`
+    );
+    await prisma.$executeRaw`
+      INSERT INTO "Club" ("slug", "name", "country", "pictureUrl")
+      VALUES ${Prisma.join(values)}
+      ON CONFLICT ("slug") DO UPDATE SET
+        "name"       = EXCLUDED."name",
+        "country"    = EXCLUDED."country",
+        "pictureUrl" = EXCLUDED."pictureUrl"
+    `;
+  }
+
+  // One statement for the whole batch rather than one per player: the database
+  // is remote, and a round trip per row is what made the import time out.
+  const rows = players.map((p) => {
     const injury = p.activeInjuries?.[0];
     const suspension = p.activeSuspensions?.[0];
     // Drop the nulls (games the player didn't feature in) — the sparkline and
     // averages should read actual performances, not gaps.
     const scores = (p.rawPlayerGameScores ?? []).filter((s): s is number => typeof s === "number");
 
-    await prisma.player.update({
-      where: { slug: p.slug },
-      data: {
-        displayName: p.displayName ?? undefined,
-        age: p.age ?? undefined,
-        shirtNumber: p.shirtNumber ?? null,
-        position: p.anyPositions?.[0] ?? undefined,
-        pictureUrl: p.squaredPictureUrl ?? p.avatarPictureUrl ?? null,
-        country: p.country?.code ?? null,
-        clubSlug: club?.slug ?? null,
-        injuryStatus: injury?.status ?? null,
-        injuryUntil: parseDate(injury?.expectedEndDate),
-        suspended: Boolean(suspension),
-        sorareProjection: p.nextClassicFixtureProjectedScore ?? null,
-        recentScores: JSON.stringify(scores),
-        app5: p.lastFiveSo5Appearances ?? null,
-        app15: p.lastFifteenSo5Appearances ?? null,
-        seasonAppearances: p.seasonAppearances ?? null,
-        avgL5: p.avgL5 ?? null,
-        avgL15: p.avgL15 ?? null,
-        avgL10Played: p.avgL10Played ?? null,
-        enrichedAt: new Date(),
-      },
-    });
-  }
+    return Prisma.sql`(${p.slug}, ${p.displayName ?? p.slug}, ${p.anyPositions?.[0] ?? "Midfielder"},
+      ${p.age ?? null}, ${p.shirtNumber ?? null},
+      ${p.squaredPictureUrl ?? p.avatarPictureUrl ?? null}, ${p.country?.code ?? null},
+      ${p.activeClub?.slug ?? null}, ${injury?.status ?? null}, ${parseDate(injury?.expectedEndDate)},
+      ${Boolean(suspension)}, ${p.nextClassicFixtureProjectedScore ?? null},
+      ${JSON.stringify(scores)}, ${p.lastFiveSo5Appearances ?? null},
+      ${p.lastFifteenSo5Appearances ?? null}, ${p.seasonAppearances ?? null},
+      ${p.avgL5 ?? null}, ${p.avgL15 ?? null}, ${p.avgL10Played ?? null}, ${now}, ${now})`;
+  });
+
+  await prisma.$executeRaw`
+    INSERT INTO "Player" ("slug", "displayName", "position", "age", "shirtNumber",
+                          "pictureUrl", "country", "clubSlug", "injuryStatus", "injuryUntil",
+                          "suspended", "sorareProjection", "recentScores", "app5", "app15",
+                          "seasonAppearances", "avgL5", "avgL15", "avgL10Played",
+                          "enrichedAt", "updatedAt")
+    VALUES ${Prisma.join(rows)}
+    ON CONFLICT ("slug") DO UPDATE SET
+      "displayName"       = EXCLUDED."displayName",
+      "position"          = EXCLUDED."position",
+      "age"               = EXCLUDED."age",
+      "shirtNumber"       = EXCLUDED."shirtNumber",
+      "pictureUrl"        = EXCLUDED."pictureUrl",
+      "country"           = EXCLUDED."country",
+      "clubSlug"          = EXCLUDED."clubSlug",
+      "injuryStatus"      = EXCLUDED."injuryStatus",
+      "injuryUntil"       = EXCLUDED."injuryUntil",
+      "suspended"         = EXCLUDED."suspended",
+      "sorareProjection"  = EXCLUDED."sorareProjection",
+      "recentScores"      = EXCLUDED."recentScores",
+      "app5"              = EXCLUDED."app5",
+      "app15"             = EXCLUDED."app15",
+      "seasonAppearances" = EXCLUDED."seasonAppearances",
+      "avgL5"             = EXCLUDED."avgL5",
+      "avgL15"            = EXCLUDED."avgL15",
+      "avgL10Played"      = EXCLUDED."avgL10Played",
+      "enrichedAt"        = EXCLUDED."enrichedAt",
+      "updatedAt"         = EXCLUDED."updatedAt"
+  `;
 }

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { publicGraphql, OPEN_FIXTURES_PUBLIC } from "../sorare/publicClient";
 import { projectFromPublic } from "./publicProjection";
@@ -96,40 +97,31 @@ export async function recomputeFromPublic(fixtureSlug: string): Promise<number> 
     return { playerSlug: p.slug, form };
   });
 
-  // Batched rather than one 400-statement transaction: Neon is remote, and a
-  // single transaction that size risks outliving the function timeout and
-  // rolling the whole recompute back. Chunks commit independently, so a slow
-  // run still leaves most projections updated.
-  const CHUNK = 50;
+  // One statement per chunk instead of one per player. Prisma runs the
+  // statements of a transaction sequentially, so ~400 upserts meant ~400 round
+  // trips to a database that may sit on another continent — slow enough to
+  // exhaust the function's time budget and return a 504.
+  const CHUNK = 250;
   for (let i = 0; i < rows.length; i += CHUNK) {
-    await prisma.$transaction(
-      rows.slice(i, i + CHUNK).map(({ playerSlug, form }) =>
-        prisma.projection.upsert({
-          where: { playerSlug_fixtureSlug: { playerSlug, fixtureSlug } },
-          create: {
-            playerSlug,
-            fixtureSlug,
-            pStart: form.pStart,
-            confidence: form.confidence,
-            expectedScore: form.expected,
-            floorScore: form.floor,
-            l5: form.l5,
-            l15: form.l15,
-            note: form.note || null,
-          },
-          update: {
-            pStart: form.pStart,
-            confidence: form.confidence,
-            expectedScore: form.expected,
-            floorScore: form.floor,
-            l5: form.l5,
-            l15: form.l15,
-            note: form.note || null,
-            computedAt: now,
-          },
-        })
-      )
+    const values = rows.slice(i, i + CHUNK).map(
+      ({ playerSlug, form }) => Prisma.sql`(${playerSlug}, ${fixtureSlug}, ${form.pStart},
+        ${form.confidence}, ${form.expected}, ${form.floor}, ${form.l5}, ${form.l15},
+        ${form.note || null}, ${now})`
     );
+    await prisma.$executeRaw`
+      INSERT INTO "Projection" ("playerSlug", "fixtureSlug", "pStart", "confidence",
+                                "expectedScore", "floorScore", "l5", "l15", "note", "computedAt")
+      VALUES ${Prisma.join(values)}
+      ON CONFLICT ("playerSlug", "fixtureSlug") DO UPDATE SET
+        "pStart"        = EXCLUDED."pStart",
+        "confidence"    = EXCLUDED."confidence",
+        "expectedScore" = EXCLUDED."expectedScore",
+        "floorScore"    = EXCLUDED."floorScore",
+        "l5"            = EXCLUDED."l5",
+        "l15"           = EXCLUDED."l15",
+        "note"          = EXCLUDED."note",
+        "computedAt"    = EXCLUDED."computedAt"
+    `;
   }
 
   await prisma.syncLog.create({
