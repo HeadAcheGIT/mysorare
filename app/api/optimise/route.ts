@@ -46,6 +46,7 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     captain: sol.captain,
     cards: sol.cards.map((c) => ({
       cardSlug: c.cardSlug,
+      playerSlug: c.playerSlug,
       name: c.playerName,
       position: c.position,
       club: c.clubSlug,

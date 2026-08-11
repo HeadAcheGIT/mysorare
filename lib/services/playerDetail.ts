@@ -51,8 +51,8 @@ query PlayerDetail($slug: String!) {
         homeScore
         awayScore
         competition { displayName }
-        homeTeam { ... on Club { name pictureUrl } }
-        awayTeam { ... on Club { name pictureUrl } }
+        homeTeam { ... on Club { name pictureUrl } ... on NationalTeam { name pictureUrl } }
+        awayTeam { ... on Club { name pictureUrl } ... on NationalTeam { name pictureUrl } }
         playerGameScore(playerSlug: $slug) { score }
       }
     }
@@ -62,8 +62,8 @@ query PlayerDetail($slug: String!) {
         date
         statusTyped
         competition { displayName }
-        homeTeam { ... on Club { name pictureUrl } }
-        awayTeam { ... on Club { name pictureUrl } }
+        homeTeam { ... on Club { name pictureUrl } ... on NationalTeam { name pictureUrl } }
+        awayTeam { ... on Club { name pictureUrl } ... on NationalTeam { name pictureUrl } }
       }
     }
   }

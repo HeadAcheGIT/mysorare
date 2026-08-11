@@ -37,7 +37,13 @@ const TONE: Record<string, { dot: string; text: string }> = {
 
 const POS: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MIL", Forward: "ATT" };
 
-export default function InsightList({ group }: { group: InsightGroup }) {
+export default function InsightList({
+  group,
+  onSelectPlayer,
+}: {
+  group: InsightGroup;
+  onSelectPlayer: (playerSlug: string) => void;
+}) {
   const [open, setOpen] = useState(true);
   const tone = TONE[group.kind] ?? { dot: "bg-muted", text: "text-muted" };
 
@@ -62,21 +68,27 @@ export default function InsightList({ group }: { group: InsightGroup }) {
       {open && (
         <ul className="border-t border-line divide-y divide-line">
           {group.items.map((it) => (
-            <li key={it.cardSlug} className="flex items-center gap-3 px-3 py-2.5">
-              {it.picture ? (
-                // eslint-disable-next-line @next/next/no-img-element -- remote Sorare CDN
-                <img src={it.picture} alt="" loading="lazy" className="w-9 h-9 rounded-full object-cover bg-ink shrink-0" />
-              ) : (
-                <span className="w-9 h-9 rounded-full bg-ink shrink-0" />
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="font-bold text-sm truncate">{it.name}</p>
-                <p className="text-[11px] text-muted truncate">
-                  {POS[it.position] ?? it.position}
-                  {it.club ? ` · ${it.club}` : ""}
-                </p>
-              </div>
-              <p className={`font-mono text-[11px] text-right shrink-0 max-w-[45%] ${tone.text}`}>{it.reason}</p>
+            <li key={it.cardSlug}>
+              <button
+                type="button"
+                onClick={() => onSelectPlayer(it.playerSlug)}
+                className="w-full text-left flex items-center gap-3 px-3 py-2.5 hover:bg-line/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-flood focus-visible:ring-inset"
+              >
+                {it.picture ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- remote Sorare CDN
+                  <img src={it.picture} alt="" loading="lazy" className="w-9 h-9 rounded-full object-cover bg-ink shrink-0" />
+                ) : (
+                  <span className="w-9 h-9 rounded-full bg-ink shrink-0" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-sm truncate">{it.name}</p>
+                  <p className="text-[11px] text-muted truncate">
+                    {POS[it.position] ?? it.position}
+                    {it.club ? ` · ${it.club}` : ""}
+                  </p>
+                </div>
+                <p className={`font-mono text-[11px] text-right shrink-0 max-w-[45%] ${tone.text}`}>{it.reason}</p>
+              </button>
             </li>
           ))}
         </ul>

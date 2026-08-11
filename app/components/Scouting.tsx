@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import { POSITION_SHORT } from "@/lib/types";
 import { formatMoney as money, relativeDate as daysAgo } from "@/lib/format";
-import MatchList from "./MatchList";
 
 type Money = { amount: number; currency: string } | null;
 
@@ -37,6 +36,38 @@ type League = { slug: string; name: string; country: string | null };
 /** Leagues worth putting first for a French manager; the rest stay alphabetical. */
 const PINNED = ["ligue-1-fr", "premier-league-gb-eng", "laliga-es", "serie-a-it", "bundesliga-de", "ligue-2-fr"];
 
+/** The in-season sale history block, slotted into the shared player popup on open. */
+function SaleHistory({ trend, floorInSeason, floorAnySeason, rarity }: { trend: SaleTrend | null; floorInSeason: Money; floorAnySeason: Money; rarity: string }) {
+  if (!trend?.sales.length) {
+    return (
+      <p className="font-mono text-xs text-muted">
+        Aucune vente in-season {rarity} enregistrée pour ce joueur.
+        {floorAnySeason && ` Prix toutes saisons : ${money(floorAnySeason)}.`}
+      </p>
+    );
+  }
+  return (
+    <div>
+      <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1.5">
+        Ventes in-season récentes ({rarity})
+      </p>
+      <ul className="space-y-1">
+        {trend.sales.slice(0, 8).map((s, i) => (
+          <li key={i} className="flex justify-between font-mono text-xs text-muted">
+            <span>{daysAgo(s.date)}</span>
+            <span className={i === 0 ? "text-white" : ""}>{money(s.money)}</span>
+          </li>
+        ))}
+      </ul>
+      {floorInSeason && (
+        <p className="font-mono text-[11px] text-muted mt-2 pt-2 border-t border-line">
+          Annonce directe la moins chère en ce moment : {money(floorInSeason)}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
  * "Should I buy this?" for one league at a time.
  *
@@ -48,15 +79,25 @@ const PINNED = ["ligue-1-fr", "premier-league-gb-eng", "laliga-es", "serie-a-it"
  * live floor price only reflects fixed-price buy-now offers, and misses the
  * auctions most in-season cards actually move through. A quiet floor-price
  * column reads as "nothing sells here", which was wrong.
+ *
+ * Tapping a row opens the same player popup used everywhere else in the app
+ * (bio, next fixtures, recent results), with the sale history above slotted
+ * in as extra context — one consistent interaction instead of a one-off
+ * expand-in-place unique to this screen.
  */
-export default function Scouting({ onError }: { onError: (m: string) => void }) {
+export default function Scouting({
+  onError,
+  onSelectPlayer,
+}: {
+  onError: (m: string) => void;
+  onSelectPlayer: (playerSlug: string, extra?: ReactNode) => void;
+}) {
   const [leagues, setLeagues] = useState<League[]>([]);
   const [league, setLeague] = useState("ligue-1-fr");
   const [rarity, setRarity] = useState("limited");
   const [players, setPlayers] = useState<ScoutPlayer[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch<{ leagues: League[] }>("/api/scouting")
@@ -72,7 +113,6 @@ export default function Scouting({ onError }: { onError: (m: string) => void }) 
 
   const run = useCallback(async () => {
     setLoading(true);
-    setExpanded(null);
     try {
       const data = await apiFetch<{ players: ScoutPlayer[] }>(
         `/api/scouting?league=${encodeURIComponent(league)}&rarity=${rarity}`
@@ -126,7 +166,7 @@ export default function Scouting({ onError }: { onError: (m: string) => void }) 
 
       <p className="font-mono text-[11px] text-muted">
         Les 15 joueurs en meilleure forme du championnat. Prix = dernière vente in-season conclue
-        (enchère ou achat direct), pas une simple annonce. Tape une ligne pour voir l&apos;historique.
+        (enchère ou achat direct), pas une simple annonce. Tape une ligne pour tout voir sur le joueur.
       </p>
 
       {noSales && (
@@ -142,13 +182,17 @@ export default function Scouting({ onError }: { onError: (m: string) => void }) 
       <ul className="flex flex-col gap-2">
         {players.map((p) => {
           const t = p.inSeasonTrend;
-          const isOpen = expanded === p.slug;
           return (
-            <li key={p.slug} className="rounded-lg bg-ink2 border border-line overflow-hidden">
+            <li key={p.slug}>
               <button
                 type="button"
-                onClick={() => setExpanded(isOpen ? null : p.slug)}
-                className="w-full text-left flex items-center gap-3 p-3"
+                onClick={() =>
+                  onSelectPlayer(
+                    p.slug,
+                    <SaleHistory trend={t} floorInSeason={p.floorInSeason} floorAnySeason={p.floorAnySeason} rarity={rarity} />
+                  )
+                }
+                className="w-full text-left flex items-center gap-3 p-3 rounded-lg bg-ink2 border border-line hover:bg-line/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-flood"
               >
                 {p.picture ? (
                   // eslint-disable-next-line @next/next/no-img-element -- remote Sorare CDN
@@ -196,40 +240,6 @@ export default function Scouting({ onError }: { onError: (m: string) => void }) 
                   </p>
                 </div>
               </button>
-
-              {isOpen && (
-                <div className="border-t border-line px-3 py-2.5">
-                  {t?.sales.length ? (
-                    <>
-                      <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1.5">
-                        Ventes in-season récentes
-                      </p>
-                      <ul className="space-y-1">
-                        {t.sales.slice(0, 8).map((s, i) => (
-                          <li key={i} className="flex justify-between font-mono text-xs text-muted">
-                            <span>{daysAgo(s.date)}</span>
-                            <span className={i === 0 ? "text-white" : ""}>{money(s.money)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      {p.floorInSeason && (
-                        <p className="font-mono text-[11px] text-muted mt-2 pt-2 border-t border-line">
-                          Annonce directe la moins chère en ce moment : {money(p.floorInSeason)}
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="font-mono text-xs text-muted">
-                      Aucune vente in-season {rarity} enregistrée pour ce joueur.
-                      {p.floorAnySeason && ` Prix toutes saisons : ${money(p.floorAnySeason)}.`}
-                    </p>
-                  )}
-
-                  <div className="mt-3 pt-3 border-t border-line">
-                    <MatchList slug={p.slug} />
-                  </div>
-                </div>
-              )}
             </li>
           );
         })}

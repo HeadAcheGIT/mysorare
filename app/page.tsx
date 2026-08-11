@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch, ApiFetchError } from "@/lib/apiFetch";
 import { POSITION_SHORT, type SquadCard, type SquadResponse } from "@/lib/types";
 import PlayerCard from "./components/PlayerCard";
@@ -13,6 +13,7 @@ import Deadline, { type GameWeek } from "./components/Deadline";
 import InsightList, { type InsightGroup } from "./components/InsightList";
 import DataHealth from "./components/DataHealth";
 import Scouting from "./components/Scouting";
+import PlayerPopup from "./components/PlayerPopup";
 
 type OptimiseResult = {
   fixture: string | null;
@@ -22,6 +23,7 @@ type OptimiseResult = {
   error?: string;
   cards: {
     cardSlug: string;
+    playerSlug: string;
     name: string;
     position: string;
     club: string | null;
@@ -57,6 +59,30 @@ export default function Page() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<SquadCard | null>(null);
+  const [popupSlug, setPopupSlug] = useState<string | null>(null);
+  const [popupExtra, setPopupExtra] = useState<ReactNode>(null);
+
+  /**
+   * Single entry point for "a player was clicked", used everywhere a name
+   * appears (Semaine insights, Compo results, scouting, search, watchlist).
+   * If you own a card for that player, the richer card-specific sheet opens
+   * (price paid, your projection) instead of the generic popup — same player,
+   * more context, when we have it. `extra` lets a caller (e.g. scouting, with
+   * its sale-trend data already in hand) slot context into the popup; it's
+   * only used on the popup path since PlayerSheet has its own equivalents.
+   */
+  const openPlayer = useCallback(
+    (playerSlug: string, extra?: ReactNode) => {
+      const owned = squad.find((c) => c.playerSlug === playerSlug);
+      if (owned) {
+        setSelected(owned);
+      } else {
+        setPopupExtra(extra ?? null);
+        setPopupSlug(playerSlug);
+      }
+    },
+    [squad]
+  );
 
   // Gallery controls
   const [search, setSearch] = useState("");
@@ -429,7 +455,7 @@ export default function Page() {
                 ) : (
                   <div className="space-y-3">
                     {insights.map((g) => (
-                      <InsightList key={g.kind} group={g} />
+                      <InsightList key={g.kind} group={g} onSelectPlayer={openPlayer} />
                     ))}
                   </div>
                 )}
@@ -526,36 +552,39 @@ export default function Page() {
                 </div>
                 <ol className="flex flex-col gap-2">
                   {lineup.cards.map((c) => (
-                    <li
-                      key={c.cardSlug}
-                      className={`grid grid-cols-[40px_1fr_auto] gap-3 items-center p-3 rounded-lg bg-ink2 border border-line border-l-[3px] ${
-                        c.isCaptain ? "border-l-flood" : "border-l-limited"
-                      }`}
-                    >
-                      <span className="font-display text-xs font-bold uppercase text-muted tracking-wider">
-                        {POSITION_SHORT[c.position] ?? c.position}
-                      </span>
-                      <span className="min-w-0 flex flex-col gap-1">
-                        <span className="font-bold truncate">
-                          {c.name}
-                          {c.isCaptain && (
-                            <span className="ml-2 px-1.5 py-0.5 rounded bg-flood text-ink text-[10px] font-bold">C</span>
-                          )}
+                    <li key={c.cardSlug}>
+                      <button
+                        type="button"
+                        onClick={() => openPlayer(c.playerSlug)}
+                        className={`w-full text-left grid grid-cols-[40px_1fr_auto] gap-3 items-center p-3 rounded-lg bg-ink2 border border-line border-l-[3px] hover:bg-line/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-flood ${
+                          c.isCaptain ? "border-l-flood" : "border-l-limited"
+                        }`}
+                      >
+                        <span className="font-display text-xs font-bold uppercase text-muted tracking-wider">
+                          {POSITION_SHORT[c.position] ?? c.position}
                         </span>
-                        <span className="text-xs text-muted truncate">
-                          {c.club ?? "sans club"} · titulaire {pct(c.pStart)} · L15 {one(c.l15)}
+                        <span className="min-w-0 flex flex-col gap-1">
+                          <span className="font-bold truncate">
+                            {c.name}
+                            {c.isCaptain && (
+                              <span className="ml-2 px-1.5 py-0.5 rounded bg-flood text-ink text-[10px] font-bold">C</span>
+                            )}
+                          </span>
+                          <span className="text-xs text-muted truncate">
+                            {c.club ?? "sans club"} · titulaire {pct(c.pStart)} · L15 {one(c.l15)}
+                          </span>
+                          <span className="bar-track max-w-[180px]">
+                            <span
+                              className={`bar-fill ${c.pStart < 0.5 ? "low" : ""}`}
+                              style={{ width: `${c.pStart * 100}%` }}
+                            />
+                          </span>
                         </span>
-                        <span className="bar-track max-w-[180px]">
-                          <span
-                            className={`bar-fill ${c.pStart < 0.5 ? "low" : ""}`}
-                            style={{ width: `${c.pStart * 100}%` }}
-                          />
+                        <span className="font-display text-3xl font-bold text-right leading-none">
+                          {c.expected}
+                          <small className="block text-[10px] font-mono text-muted font-normal">projeté</small>
                         </span>
-                      </span>
-                      <span className="font-display text-3xl font-bold text-right leading-none">
-                        {c.expected}
-                        <small className="block text-[10px] font-mono text-muted font-normal">projeté</small>
-                      </span>
+                      </button>
                     </li>
                   ))}
                 </ol>
@@ -605,7 +634,7 @@ export default function Page() {
               <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
                 Scouting par championnat
               </h2>
-              <Scouting onError={setError} />
+              <Scouting onError={setError} onSelectPlayer={openPlayer} />
             </div>
 
             <div>
@@ -637,12 +666,16 @@ export default function Page() {
                   return (
                     <li key={p.slug} className="p-3 rounded-lg bg-ink2 border border-line">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => openPlayer(p.slug)}
+                          className="min-w-0 text-left hover:underline decoration-muted underline-offset-2"
+                        >
                           <p className="font-bold truncate">{p.name}</p>
                           <p className="text-xs text-muted truncate">
                             {POSITION_SHORT[p.position] ?? p.position} · {p.club ?? "—"}
                           </p>
-                        </div>
+                        </button>
                         <div className="flex gap-2 shrink-0">
                           <button
                             onClick={() => checkPrice(p.slug)}
@@ -688,13 +721,17 @@ export default function Page() {
                 return (
                   <li key={w.playerSlug} className="p-3 rounded-lg bg-ink2 border border-line">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => openPlayer(w.playerSlug)}
+                        className="min-w-0 text-left hover:underline decoration-muted underline-offset-2"
+                      >
                         <p className="font-bold truncate">{w.label}</p>
                         <p className="text-xs text-muted truncate">
                           {w.position ? POSITION_SHORT[w.position] ?? w.position : ""}
                           {w.club ? ` · ${w.club}` : ""}
                         </p>
-                      </div>
+                      </button>
                       <div className="flex gap-2 shrink-0">
                         <button
                           onClick={() => checkPrice(w.playerSlug)}
@@ -786,6 +823,16 @@ export default function Page() {
       </main>
 
       {selected && <PlayerSheet card={selected} onClose={() => setSelected(null)} />}
+      {popupSlug && (
+        <PlayerPopup
+          slug={popupSlug}
+          extra={popupExtra}
+          onClose={() => {
+            setPopupSlug(null);
+            setPopupExtra(null);
+          }}
+        />
+      )}
 
       <nav className="fixed bottom-0 inset-x-0 bg-ink2 border-t border-line safe-bottom z-30">
         <div className="max-w-3xl mx-auto flex">

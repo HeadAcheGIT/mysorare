@@ -22,6 +22,8 @@ type PlayerDetail = {
   futureGames: GameEntry[];
 };
 
+export type { GameEntry, PlayerDetail as MatchListDetail };
+
 function Row({ game }: { game: GameEntry }) {
   return (
     <li className="flex items-center gap-2 py-1.5">
@@ -55,12 +57,25 @@ function Row({ game }: { game: GameEntry }) {
  * A player's recent results (with their So5 score) and upcoming fixtures.
  * Lazy-loaded on open rather than bundled into the squad/scouting payloads —
  * it's one extra request per player only paid when someone actually wants it.
+ *
+ * `initialGames` skips that fetch when the caller already has the games (e.g.
+ * PlayerPopup, which fetches the full player detail itself) — avoids firing
+ * the same /api/player request twice for one popup open.
  */
-export default function MatchList({ slug }: { slug: string }) {
-  const [detail, setDetail] = useState<PlayerDetail | null>(null);
+export default function MatchList({
+  slug,
+  initialGames,
+}: {
+  slug: string;
+  initialGames?: { pastGames: GameEntry[]; futureGames: GameEntry[] };
+}) {
+  const [detail, setDetail] = useState<PlayerDetail | null>(
+    initialGames ? { slug, ...initialGames } : null
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (initialGames) return;
     let cancelled = false;
     setDetail(null);
     setError(null);
@@ -70,6 +85,7 @@ export default function MatchList({ slug }: { slug: string }) {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialGames is a fetch-skip flag, not reactive data
   }, [slug]);
 
   if (error) return <p className="text-xs text-warn">{error}</p>;
