@@ -3,6 +3,67 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-12 — Nuit d'audit
+
+### Service worker : la PWA installée cassait à chaque déploiement
+
+Le plus gros bug trouvé jusqu'ici, et il était en production.
+
+`public/sw.js` servait **tout** en cache-first sauf `/api/`, et mettait `/`
+(le document HTML) en cache dès l'installation. Or le HTML fige les URLs des
+chunks JS du build. Donc, après chaque déploiement :
+
+1. la PWA installée continuait de servir l'ancien HTML depuis le cache ;
+2. cet HTML demandait des chunks du build précédent, supprimés depuis → 404 ;
+3. React ne pouvait plus hydrater → app cassée.
+
+Pire : `SHELL_CACHE` était une constante figée (`"cockpit-shell-v1"`), et le
+handler `activate` ne supprime que les caches dont le nom **diffère** du nom
+courant. Comme il ne changeait jamais, rien n'était jamais purgé : l'app
+restait cassée jusqu'à effacement manuel des données du site.
+
+Réécrit avec la seule règle qui évite cette classe de bug — **ne jamais
+servir un document HTML périmé**, puisque c'est lui qui épingle la version de
+tout le reste :
+
+- navigations (HTML) → réseau d'abord, cache seulement en secours hors-ligne ;
+- `/_next/static/*` et `/icons/*` → cache d'abord, sans risque car ces URLs
+  sont hashées par contenu (nouveau build = nouvelle URL) ;
+- `/api/*` et tout ce qui n'est pas GET → jamais interceptés ;
+- reste → réseau d'abord avec repli sur le cache.
+
+Le nom de cache est désormais versionné (`cockpit-shell-v2`), ce qui fait que
+les installations déjà cassées **se réparent toutes seules** dès qu'elles
+récupèrent ce fichier.
+
+Vérifié en conditions réelles : avec le cache contenant volontairement un
+build périmé et le serveur en servant un plus récent, la page reçoit bien le
+HTML frais, le cache se réaligne derrière, et l'ancien cache `v1` est purgé
+automatiquement. 8 tests de non-régression ajoutés (`public/sw.test.ts`) qui
+épinglent précisément les deux propriétés dont la violation avait causé la
+panne.
+
+### Erreur d'hydratation React — toujours ouverte, mais mieux cernée
+
+L'avertissement d'hydratation en mode développement **n'est pas** causé par le
+service worker, contrairement à ce que l'entrée précédente laissait supposer :
+il persiste service worker désinstallé et caches vidés. Éliminés au passage :
+
+- l'ordre des balises du `<head>` (identique octet pour octet entre le HTML
+  serveur et le DOM client) ;
+- la structure du `<body>` (`<div class="min-h-screen">` en premier des deux
+  côtés) ;
+- le service worker (reproduit sans lui).
+
+Non identifié à ce stade. Les erreurs sont levées comme exceptions non
+catchées interceptées par l'overlay de développement Next, ce qui les rend
+difficiles à capturer : ni un hook `console.error` ni un écouteur
+`window.addEventListener('error')` injectés avant l'hydratation ne les voient
+passer. Impact réel constaté : nul à l'usage (tous les écrans s'affichent et
+fonctionnent), coût théorique en production = un rendu client de la partie
+concernée au lieu d'une hydratation. À reprendre avec l'overlay de dev ouvert
+manuellement, qui affiche le diff exact.
+
 ## 2026-08-11 — Backlog fiches joueurs/marché + audit UI/UX + 2 bugs de rendu
 
 Grosse session en trois temps : (1) tout le backlog demandé sur les fiches
