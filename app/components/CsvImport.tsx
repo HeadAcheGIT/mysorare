@@ -82,11 +82,11 @@ export default function CsvImport({ onDone }: { onDone: () => void }) {
       onDone();
     } catch (err) {
       const raw = err instanceof Error ? err.message : "Import impossible";
-      // A 504 here is the function timing out, which says nothing useful on its
-      // own — name the likely cause and what to do about it.
+      // A 504 here is the function hitting its time limit, which says nothing
+      // useful on its own — name what to do about it instead.
       setError(
         /504|timeout|Gateway/i.test(raw)
-          ? "Délai dépassé côté serveur. Réessaie : l'import reprend là où il s'est arrêté. Si ça persiste, active Fluid Compute dans Vercel (Settings → Functions)."
+          ? "Délai dépassé côté serveur. Relance l'import : ce qui est déjà écrit est conservé, seul le reste sera repris."
           : raw
       );
       setPhase("idle");
