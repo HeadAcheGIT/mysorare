@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Sale" ADD COLUMN "soldPrice" DOUBLE PRECISION,
+ADD COLUMN "soldAt" TIMESTAMP(3),
+ADD COLUMN "source" TEXT NOT NULL DEFAULT 'csv_diff';

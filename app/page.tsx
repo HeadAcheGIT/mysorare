@@ -113,12 +113,16 @@ export default function Page() {
     lastKnownPrice: number | null;
     lastFloorPrice: number | null;
     lastEstimatedPrice: number | null;
+    soldPrice: number | null;
+    soldAt: string | null;
+    source: string;
     detectedAt: string;
     currentFloor: number | null;
     changePct: number | null;
   };
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [salesLoading, setSalesLoading] = useState(false);
+  const [salesSyncing, setSalesSyncing] = useState(false);
   const loadSales = useCallback(async () => {
     setSalesLoading(true);
     try {
@@ -130,11 +134,24 @@ export default function Page() {
     }
   }, []);
 
+  async function syncSalesFromSorare() {
+    setSalesSyncing(true);
+    try {
+      await apiFetch("/api/sales/sync", { method: "POST" });
+      await loadSales();
+    } catch (err) {
+      setError(msg(err));
+    } finally {
+      setSalesSyncing(false);
+    }
+  }
+
   // Settings
   const [logs, setLogs] = useState<{ job: string; status: string; detail: string | null; ranAt: string }[]>([]);
   const [tokenStatus, setTokenStatus] = useState<{ signedIn: boolean; expiresAt: string | null } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [checkingLineups, setCheckingLineups] = useState(false);
+  const [syncingFriendlies, setSyncingFriendlies] = useState(false);
   const [notice, setNotice] = useState("");
 
   // Market
@@ -412,6 +429,28 @@ export default function Page() {
       setError(msg(err));
     } finally {
       setCheckingLineups(false);
+    }
+  }
+
+  async function syncFriendlies() {
+    setSyncingFriendlies(true);
+    setNotice("");
+    try {
+      const res = await apiFetch<{
+        clubsChecked: number;
+        fixturesFound: number;
+        appearancesWritten: number;
+        partial: boolean;
+      }>("/api/friendlies/sync", { method: "POST" });
+      setNotice(
+        `${res.appearancesWritten} performance(s) sur ${res.fixturesFound} amical(aux), ${res.clubsChecked} clubs.` +
+          (res.partial ? " Budget de requêtes atteint — relance pour la suite." : "")
+      );
+      await loadSquad();
+    } catch (err) {
+      setError(msg(err));
+    } finally {
+      setSyncingFriendlies(false);
     }
   }
 
@@ -936,10 +975,18 @@ export default function Page() {
         {tab === "history" && (
           <section aria-label="Historique" className="space-y-3">
             <p className="font-mono text-xs text-muted mb-2">
-              Cartes disparues de ta galerie lors d&apos;un import CSV — vendues ou transférées, l&apos;export ne fait
-              pas la différence. Le prix affiché est ta dernière valorisation SorareScore avant disparition, pas un
-              reçu de vente confirmé.
+              Cartes disparues de ta galerie — vendues ou transférées. « Synchroniser » va chercher tes vraies
+              ventes chez Sorare (prix et date confirmés, historique complet) ; sans connexion, seule ta dernière
+              valorisation SorareScore avant disparition est affichée, en estimation.
             </p>
+
+            <button
+              onClick={syncSalesFromSorare}
+              disabled={salesSyncing}
+              className="w-full border border-line font-bold py-2.5 rounded-md text-sm disabled:opacity-50"
+            >
+              {salesSyncing ? "Synchronisation…" : "Synchroniser depuis Sorare"}
+            </button>
 
             {salesLoading && <p className="font-mono text-sm text-muted">Chargement…</p>}
 
@@ -949,7 +996,10 @@ export default function Page() {
 
             <ul className="flex flex-col gap-2">
               {sales.map((s) => {
-                const reference = s.lastKnownPrice ?? s.lastFloorPrice;
+                const confirmed = s.source === "sorare_sync" && s.soldPrice != null;
+                const reference = s.soldPrice ?? s.lastKnownPrice ?? s.lastFloorPrice;
+                const profit = confirmed && s.boughtPrice != null ? s.soldPrice! - s.boughtPrice : null;
+                const when = s.soldAt ?? s.detectedAt;
                 return (
                   <li key={s.cardSlug} className="p-3 rounded-lg bg-ink2 border border-line">
                     <button
@@ -963,15 +1013,26 @@ export default function Page() {
                         {s.season != null && ` · saison ${s.season}`}
                         {s.serialNumber != null && ` · #${s.serialNumber}`}
                         {" · "}
-                        {new Date(s.detectedAt).toLocaleDateString("fr-FR")}
+                        {new Date(when).toLocaleDateString("fr-FR")}
                       </p>
                     </button>
 
                     <div className="mt-2 font-mono text-xs flex flex-wrap gap-x-4 gap-y-1 text-muted">
                       {s.boughtPrice != null && <span>Acheté {s.boughtPrice.toFixed(2)} €</span>}
-                      {reference != null && <span>Dernière valo {reference.toFixed(2)} €</span>}
+                      {confirmed ? (
+                        <span className="text-white">Vendu {s.soldPrice!.toFixed(2)} €</span>
+                      ) : (
+                        reference != null && <span>Dernière valo (estimation) {reference.toFixed(2)} €</span>
+                      )}
                       {s.currentFloor != null && <span>Floor actuel {s.currentFloor.toFixed(2)} €</span>}
                     </div>
+
+                    {profit != null && (
+                      <p className={`mt-1 text-xs font-mono ${profit >= 0 ? "text-ok" : "text-warn"}`}>
+                        {profit >= 0 ? "+" : ""}
+                        {profit.toFixed(2)} € vs achat
+                      </p>
+                    )}
 
                     {s.changePct != null ? (
                       <p className={`mt-1 text-xs font-mono ${s.changePct > 0 ? "text-warn" : "text-ok"}`}>
@@ -1014,6 +1075,19 @@ export default function Page() {
             </button>
             <p className="font-mono text-xs text-muted">
               Utile seulement ~90 min avant le coup d&apos;envoi. Nécessite APIFOOTBALL_KEY.
+            </p>
+
+            <button
+              onClick={syncFriendlies}
+              disabled={syncingFriendlies}
+              className="w-full border border-line font-bold py-3 rounded-md text-sm disabled:opacity-50"
+            >
+              {syncingFriendlies ? "Récupération…" : "Récupérer les matchs de préparation"}
+            </button>
+            <p className="font-mono text-xs text-muted">
+              Minutes, buts et passes de tes joueurs en amicaux de club — l&apos;API Sorare ne les couvre pas,
+              ceux-ci viennent d&apos;API-Football (nécessite APIFOOTBALL_KEY, ~1 requête par club puis 1 par
+              match sur les 100/jour gratuites). À lancer une fois par semaine pendant la préparation.
             </p>
 
             {notice && <p className="font-mono text-xs text-ok">{notice}</p>}

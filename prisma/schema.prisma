@@ -122,6 +122,19 @@ model Appearance {
   onGameSheet Boolean   @default(false)
   score       Float?
 
+  /// Club friendlies (pre-season) come from API-Football, not Sorare — see
+  /// lib/services/friendlies.ts. Sorare's public API carries international
+  /// friendlies but no club pre-season games at all, which is exactly the
+  /// window where you most need to know who is actually playing again.
+  goals   Int?
+  assists Int?
+  /// API-Football's own match rating (~1-10). No So5 score exists for a
+  /// friendly, so this is the only quality signal available for these games.
+  rating  Float?
+  friendly Boolean @default(false)
+  /// "sorare" | "api_football"
+  source   String  @default("sorare")
+
   @@unique([playerSlug, gameId])
   @@index([playerSlug])
 }
@@ -232,11 +245,22 @@ model Sale {
   /// Best-effort only: the CSV's last "Price" column before the card
   /// disappeared — SorareScore's own valuation, not a confirmed sale
   /// receipt. The export has no field for what a card actually sold for, so
-  /// this is a stand-in the UI must label as an estimate, never a fact.
+  /// this is a stand-in the UI must label as an estimate, never a fact — used
+  /// only until/unless the row below is filled in.
   lastKnownPrice     Float?
   lastFloorPrice     Float?
   lastEstimatedPrice Float?
   detectedAt         DateTime @default(now())
+
+  /// The real thing, from Sorare's own transaction record
+  /// (currentUser.soldSingleSaleTokenOffers) rather than inferred from a CSV
+  /// diff — see syncSoldOffersFromSorare in lib/services/sales.ts. Requires
+  /// being signed in to Sorare in-app; null until a sync has run. When set,
+  /// the UI should prefer this over lastKnownPrice entirely.
+  soldPrice Float?
+  soldAt    DateTime?
+  /// "csv_diff" (inferred, see above) | "sorare_sync" (confirmed transaction)
+  source    String    @default("csv_diff")
 
   @@index([playerSlug])
 }
