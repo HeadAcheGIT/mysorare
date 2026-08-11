@@ -13,6 +13,17 @@ import { publicGraphql } from "../sorare/publicClient";
 
 export type Money = { amount: number; currency: string } | null;
 
+export interface SaleTrend {
+  /// Completed sales (auctions and direct offers alike), newest first, in
+  /// whatever currency each seller priced in.
+  sales: { date: string; money: Money }[];
+  lastSale: Money;
+  lastSaleDate: string | null;
+  /// % change: average of the most recent sales vs the batch before them.
+  /// Positive means the price is climbing. Null without enough sales to compare.
+  trendPct: number | null;
+}
+
 export interface ScoutPlayer {
   slug: string;
   name: string;
@@ -23,10 +34,14 @@ export interface ScoutPlayer {
   avgL10Played: number | null;
   app15: number | null;
   injury: string | null;
-  /// Floor for an in-season card of the requested rarity, if one is listed.
+  /// Floor for an in-season card of the requested rarity, if one is listed
+  /// for immediate purchase right now — a snapshot, not a trend.
   floorInSeason: Money;
   /// Floor for any season — the reference against which the in-season premium reads.
   floorAnySeason: Money;
+  /// What the in-season card has actually sold for recently. This is what
+  /// answers "is the price going up or down", which a live listing can't.
+  inSeasonTrend: SaleTrend | null;
   /// Cards of this player already in your gallery, so scouting never suggests
   /// buying what you own.
   ownedCards: number;
@@ -89,12 +104,56 @@ type Amounts = { eurCents: number | null; usdCents: number | null; referenceCurr
  * converted — an invented exchange rate would make two prices look comparable
  * when they aren't.
  */
-function toMoney(card: { liveSingleSaleOffer?: { receiverSide: { amounts: Amounts } } | null } | null): Money {
-  const a = card?.liveSingleSaleOffer?.receiverSide?.amounts;
+function toMoneyFromAmounts(a: Amounts | null | undefined): Money {
   if (!a) return null;
   if (a.eurCents != null) return { amount: a.eurCents / 100, currency: "EUR" };
   if (a.usdCents != null) return { amount: a.usdCents / 100, currency: "USD" };
   return null;
+}
+
+function toMoney(card: { liveSingleSaleOffer?: { receiverSide: { amounts: Amounts } } | null } | null): Money {
+  return toMoneyFromAmounts(card?.liveSingleSaleOffer?.receiverSide?.amounts);
+}
+
+/**
+ * Completed sales, not live listings. `anyPlayer(slug)` is the only shape
+ * Sorare accepts `tokenPrices` on — selecting it within the `players(slugs)`
+ * list is explicitly rejected — so this is one request per player and can't
+ * be batched like the rest of the scouting query.
+ */
+const PLAYER_SALES_QUERY = `
+query PlayerSales($slug: String!, $rarity: Rarity!) {
+  anyPlayer(slug: $slug) {
+    tokenPrices(rarity: $rarity, seasonEligibility: IN_SEASON, first: 20) {
+      nodes { date amounts { eurCents usdCents referenceCurrency } }
+    }
+  }
+}`;
+
+async function getSalesTrend(slug: string, rarity: string): Promise<SaleTrend | null> {
+  const data = await publicGraphql<{
+    anyPlayer: { tokenPrices: { nodes: { date: string; amounts: Amounts }[] } } | null;
+  }>(PLAYER_SALES_QUERY, { slug, rarity });
+
+  // API returns oldest-first; newest-first reads better and matches every
+  // other "recent" list in the app.
+  const nodes = [...(data.anyPlayer?.tokenPrices?.nodes ?? [])].reverse();
+  if (!nodes.length) return { sales: [], lastSale: null, lastSaleDate: null, trendPct: null };
+
+  const sales = nodes.map((n) => ({ date: n.date, money: toMoneyFromAmounts(n.amounts) }));
+
+  // Trend needs same-currency comparisons — mixing a EUR half with a USD half
+  // would read as a price move that's actually just a currency split.
+  const eur = nodes.map((n) => n.amounts.eurCents).filter((c): c is number => c != null);
+  let trendPct: number | null = null;
+  if (eur.length >= 4) {
+    const half = Math.floor(eur.length / 2);
+    const recent = eur.slice(0, half).reduce((a, b) => a + b, 0) / half;
+    const older = eur.slice(half).reduce((a, b) => a + b, 0) / (eur.length - half);
+    if (older > 0) trendPct = ((recent - older) / older) * 100;
+  }
+
+  return { sales, lastSale: sales[0]?.money ?? null, lastSaleDate: sales[0]?.date ?? null, trendPct };
 }
 
 export async function listLeagues(): Promise<League[]> {
@@ -154,12 +213,27 @@ export async function scoutLeague(
       injury: p.activeInjuries?.[0]?.status ?? null,
       floorInSeason: toMoney(p.floorInSeason),
       floorAnySeason: toMoney(p.floorAnySeason),
+      inSeasonTrend: null,
       ownedCards: o?.total ?? 0,
       ownedInSeason: o?.inSeason ?? 0,
     };
   });
 
-  // Best form first — the order you'd shop in.
+  // Best form first — the order you'd shop in, and the order sales history is
+  // fetched in, so if time runs out it's the least interesting players that
+  // go without a trend.
   players.sort((a, b) => (b.avgL5 ?? -1) - (a.avgL5 ?? -1));
+
+  // Sale history is one request per player — `tokenPrices` can't be batched
+  // (see PLAYER_SALES_QUERY) — so it's sequential and time-boxed rather than
+  // risking the route's 60s limit. Left as null past the cutoff rather than
+  // failing the whole scout: a shorter list beats no list.
+  const started = Date.now();
+  const budgetMs = 40_000;
+  for (const p of players) {
+    if (Date.now() - started > budgetMs) break;
+    p.inSeasonTrend = await getSalesTrend(p.slug, rarity).catch(() => null);
+  }
+
   return { league: comp?.displayName ?? null, players };
 }

@@ -6,6 +6,13 @@ import { POSITION_SHORT } from "@/lib/types";
 
 type Money = { amount: number; currency: string } | null;
 
+type SaleTrend = {
+  sales: { date: string; money: Money }[];
+  lastSale: Money;
+  lastSaleDate: string | null;
+  trendPct: number | null;
+};
+
 type ScoutPlayer = {
   slug: string;
   name: string;
@@ -18,6 +25,7 @@ type ScoutPlayer = {
   injury: string | null;
   floorInSeason: Money;
   floorAnySeason: Money;
+  inSeasonTrend: SaleTrend | null;
   ownedCards: number;
   ownedInSeason: number;
 };
@@ -26,15 +34,27 @@ type League = { slug: string; name: string; country: string | null };
 
 const money = (m: Money) => (m == null ? "—" : `${m.amount.toFixed(2)} ${m.currency === "USD" ? "$" : "€"}`);
 
+function daysAgo(iso: string) {
+  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (d <= 0) return "aujourd'hui";
+  if (d === 1) return "hier";
+  return `il y a ${d} j`;
+}
+
 /** Leagues worth putting first for a French manager; the rest stay alphabetical. */
 const PINNED = ["ligue-1-fr", "premier-league-gb-eng", "laliga-es", "serie-a-it", "bundesliga-de", "ligue-2-fr"];
 
 /**
  * "Should I buy this?" for one league at a time.
  *
- * Shows form and playing time next to the in-season floor, because a cheap card
- * for someone who doesn't start is not a bargain, and flags players already in
+ * Shows form and playing time next to the price, because a cheap card for
+ * someone who doesn't start is not a bargain, and flags players already in
  * your gallery so the list never recommends a duplicate.
+ *
+ * The price itself is the last *completed sale*, not a live listing — Sorare's
+ * live floor price only reflects fixed-price buy-now offers, and misses the
+ * auctions most in-season cards actually move through. A quiet floor-price
+ * column reads as "nothing sells here", which was wrong.
  */
 export default function Scouting({ onError }: { onError: (m: string) => void }) {
   const [leagues, setLeagues] = useState<League[]>([]);
@@ -43,6 +63,7 @@ export default function Scouting({ onError }: { onError: (m: string) => void }) 
   const [players, setPlayers] = useState<ScoutPlayer[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch<{ leagues: League[] }>("/api/scouting")
@@ -58,6 +79,7 @@ export default function Scouting({ onError }: { onError: (m: string) => void }) 
 
   const run = useCallback(async () => {
     setLoading(true);
+    setExpanded(null);
     try {
       const data = await apiFetch<{ players: ScoutPlayer[] }>(
         `/api/scouting?league=${encodeURIComponent(league)}&rarity=${rarity}`
@@ -71,7 +93,7 @@ export default function Scouting({ onError }: { onError: (m: string) => void }) 
     }
   }, [league, rarity, onError]);
 
-  const noneInSeason = loaded && players.length > 0 && players.every((p) => p.floorInSeason == null);
+  const noSales = loaded && players.length > 0 && players.every((p) => !p.inSeasonTrend?.sales.length);
 
   return (
     <div className="space-y-3">
@@ -110,15 +132,13 @@ export default function Scouting({ onError }: { onError: (m: string) => void }) 
       </div>
 
       <p className="font-mono text-[11px] text-muted">
-        Les 15 joueurs en meilleure forme du championnat, avec le prix plancher actuel. Sans clé API
-        Sorare, 15 est le maximum par requête.
+        Les 15 joueurs en meilleure forme du championnat. Prix = dernière vente in-season conclue
+        (enchère ou achat direct), pas une simple annonce. Tape une ligne pour voir l&apos;historique.
       </p>
 
-      {noneInSeason && (
+      {noSales && (
         <p className="text-xs text-limited bg-limited/10 border border-limited/40 rounded-md px-2.5 py-2">
-          Aucune carte in-season {rarity} en vente sur ces joueurs actuellement. La colonne « toutes
-          saisons » donne le prix des cartes plus anciennes, qui ne comptent pas pour les compétitions
-          in-season.
+          Aucune vente in-season {rarity} conclue récemment sur ces joueurs.
         </p>
       )}
 
@@ -127,48 +147,95 @@ export default function Scouting({ onError }: { onError: (m: string) => void }) 
       )}
 
       <ul className="flex flex-col gap-2">
-        {players.map((p) => (
-          <li key={p.slug} className="p-3 rounded-lg bg-ink2 border border-line flex items-center gap-3">
-            {p.picture ? (
-              // eslint-disable-next-line @next/next/no-img-element -- remote Sorare CDN
-              <img src={p.picture} alt="" loading="lazy" className="w-10 h-10 rounded-full object-cover bg-ink shrink-0" />
-            ) : (
-              <span className="w-10 h-10 rounded-full bg-ink shrink-0" />
-            )}
-
-            <div className="min-w-0 flex-1">
-              <p className="font-bold truncate flex items-center gap-2">
-                <span className="truncate">{p.name}</span>
-                {p.ownedCards > 0 && (
-                  <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-ok/15 text-ok font-mono">
-                    {p.ownedInSeason > 0 ? `${p.ownedInSeason} IS` : `x${p.ownedCards}`}
-                  </span>
+        {players.map((p) => {
+          const t = p.inSeasonTrend;
+          const isOpen = expanded === p.slug;
+          return (
+            <li key={p.slug} className="rounded-lg bg-ink2 border border-line overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setExpanded(isOpen ? null : p.slug)}
+                className="w-full text-left flex items-center gap-3 p-3"
+              >
+                {p.picture ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- remote Sorare CDN
+                  <img src={p.picture} alt="" loading="lazy" className="w-10 h-10 rounded-full object-cover bg-ink shrink-0" />
+                ) : (
+                  <span className="w-10 h-10 rounded-full bg-ink shrink-0" />
                 )}
-                {p.injury && (
-                  <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-warn/15 text-warn font-mono">
-                    blessé
-                  </span>
-                )}
-              </p>
-              <p className="text-xs text-muted truncate">
-                {POSITION_SHORT[p.position] ?? p.position}
-                {p.club ? ` · ${p.club}` : ""}
-              </p>
-              <p className="font-mono text-[11px] text-muted mt-0.5">
-                L5 {p.avgL5?.toFixed(0) ?? "—"} · joué {p.app15 ?? "—"}/15
-              </p>
-            </div>
 
-            <div className="text-right shrink-0">
-              <p className={`font-display text-lg leading-none ${p.floorInSeason ? "text-flood" : "text-muted"}`}>
-                {money(p.floorInSeason)}
-              </p>
-              <p className="text-[10px] font-mono text-muted">in-season</p>
-              <p className="text-[11px] font-mono text-muted mt-1">{money(p.floorAnySeason)}</p>
-              <p className="text-[10px] font-mono text-muted/70">toutes saisons</p>
-            </div>
-          </li>
-        ))}
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold truncate flex items-center gap-2">
+                    <span className="truncate">{p.name}</span>
+                    {p.ownedCards > 0 && (
+                      <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-ok/15 text-ok font-mono">
+                        {p.ownedInSeason > 0 ? `${p.ownedInSeason} IS` : `x${p.ownedCards}`}
+                      </span>
+                    )}
+                    {p.injury && (
+                      <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-warn/15 text-warn font-mono">
+                        blessé
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-muted truncate">
+                    {POSITION_SHORT[p.position] ?? p.position}
+                    {p.club ? ` · ${p.club}` : ""}
+                  </p>
+                  <p className="font-mono text-[11px] text-muted mt-0.5">
+                    L5 {p.avgL5?.toFixed(0) ?? "—"} · joué {p.app15 ?? "—"}/15
+                  </p>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <p className={`font-display text-lg leading-none ${t?.lastSale ? "" : "text-muted"}`}>
+                    {money(t?.lastSale ?? null)}
+                  </p>
+                  {t?.trendPct != null ? (
+                    <p className={`text-[11px] font-mono ${t.trendPct >= 0 ? "text-warn" : "text-ok"}`}>
+                      {t.trendPct >= 0 ? "▲" : "▼"} {Math.abs(t.trendPct).toFixed(0)}%
+                    </p>
+                  ) : (
+                    <p className="text-[10px] font-mono text-muted">tendance —</p>
+                  )}
+                  <p className="text-[10px] font-mono text-muted/70">
+                    {t?.lastSaleDate ? daysAgo(t.lastSaleDate) : "aucune vente"}
+                  </p>
+                </div>
+              </button>
+
+              {isOpen && (
+                <div className="border-t border-line px-3 py-2.5">
+                  {t?.sales.length ? (
+                    <>
+                      <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1.5">
+                        Ventes in-season récentes
+                      </p>
+                      <ul className="space-y-1">
+                        {t.sales.slice(0, 8).map((s, i) => (
+                          <li key={i} className="flex justify-between font-mono text-xs text-muted">
+                            <span>{daysAgo(s.date)}</span>
+                            <span className={i === 0 ? "text-white" : ""}>{money(s.money)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {p.floorInSeason && (
+                        <p className="font-mono text-[11px] text-muted mt-2 pt-2 border-t border-line">
+                          Annonce directe la moins chère en ce moment : {money(p.floorInSeason)}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="font-mono text-xs text-muted">
+                      Aucune vente in-season {rarity} enregistrée pour ce joueur.
+                      {p.floorAnySeason && ` Prix toutes saisons : ${money(p.floorAnySeason)}.`}
+                    </p>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
