@@ -59,11 +59,79 @@ describe("getSquadView — lastPlayedAt (the Héctor Holguín regression)", () =
       data: { slug: "fresh-player-2024-limited-1", playerSlug: "fresh-player", rarity: "limited" },
     });
     await prisma.appearance.create({
-      data: { playerSlug: "fresh-player", gameId: "g1", gameDate: new Date(Date.now() - 2 * 86_400_000), score: 60 },
+      data: {
+        playerSlug: "fresh-player",
+        gameId: "g1",
+        gameDate: new Date(Date.now() - 2 * 86_400_000),
+        minutes: 90,
+        score: 60,
+      },
     });
 
     const { cards } = await getSquadView(null);
     const card = cards.find((c) => c.playerSlug === "fresh-player");
+    expect(isStale(card!.lastPlayedAt)).toBe(false);
+  });
+
+  it("ignores an unused-substitute appearance — on the sheet is not the same as played", async () => {
+    await prisma.player.create({ data: { slug: "benched", displayName: "Benched", position: "Forward" } });
+    await prisma.card.create({
+      data: { slug: "benched-2024-limited-1", playerSlug: "benched", rarity: "limited" },
+    });
+    // Really played, but months ago.
+    await prisma.appearance.create({
+      data: {
+        playerSlug: "benched",
+        gameId: "old",
+        gameDate: new Date(Date.now() - 100 * 86_400_000),
+        minutes: 90,
+      },
+    });
+    // On the game sheet yesterday, never came on — must not reset the clock.
+    await prisma.appearance.create({
+      data: {
+        playerSlug: "benched",
+        gameId: "yesterday",
+        gameDate: new Date(Date.now() - 1 * 86_400_000),
+        minutes: 0,
+        onGameSheet: true,
+      },
+    });
+
+    const { cards } = await getSquadView(null);
+    const card = cards.find((c) => c.playerSlug === "benched");
+    expect(isStale(card!.lastPlayedAt)).toBe(true);
+  });
+
+  it("counts a club pre-season friendly as having played", async () => {
+    await prisma.player.create({ data: { slug: "preseason", displayName: "Preseason", position: "Midfielder" } });
+    await prisma.card.create({
+      data: { slug: "preseason-2024-limited-1", playerSlug: "preseason", rarity: "limited" },
+    });
+    // Last competitive game long ago (summer break)...
+    await prisma.appearance.create({
+      data: {
+        playerSlug: "preseason",
+        gameId: "last-league-game",
+        gameDate: new Date(Date.now() - 60 * 86_400_000),
+        minutes: 90,
+      },
+    });
+    // ...but back playing friendlies this week — the whole reason friendlies
+    // are synced at all (see lib/services/friendlies.ts).
+    await prisma.appearance.create({
+      data: {
+        playerSlug: "preseason",
+        gameId: "af-12345",
+        gameDate: new Date(Date.now() - 3 * 86_400_000),
+        minutes: 60,
+        friendly: true,
+        source: "api_football",
+      },
+    });
+
+    const { cards } = await getSquadView(null);
+    const card = cards.find((c) => c.playerSlug === "preseason");
     expect(isStale(card!.lastPlayedAt)).toBe(false);
   });
 

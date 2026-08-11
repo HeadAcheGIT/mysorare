@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "Appearance" ADD COLUMN "goals" INTEGER,
+ADD COLUMN "assists" INTEGER,
+ADD COLUMN "rating" DOUBLE PRECISION,
+ADD COLUMN "friendly" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "source" TEXT NOT NULL DEFAULT 'sorare';

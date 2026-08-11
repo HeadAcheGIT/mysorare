@@ -22,13 +22,30 @@ type GameEntry = {
   assists: number | null;
 };
 
+/**
+ * Club pre-season friendlies, from our own Appearance table rather than
+ * Sorare's game feed — Sorare's public API doesn't carry them at all. No So5
+ * score exists for these, so the signal is minutes + decisive actions.
+ */
+type FriendlyEntry = {
+  gameId: string;
+  date: string;
+  competition: string | null;
+  minutes: number;
+  started: boolean;
+  goals: number | null;
+  assists: number | null;
+  rating: number | null;
+};
+
 type PlayerDetail = {
   slug: string;
   pastGames: GameEntry[];
   futureGames: GameEntry[];
+  friendlies?: FriendlyEntry[];
 };
 
-export type { GameEntry, PlayerDetail as MatchListDetail };
+export type { GameEntry, FriendlyEntry, PlayerDetail as MatchListDetail };
 
 function Row({ game }: { game: GameEntry }) {
   const played = game.minutesPlayed != null || game.so5Score != null;
@@ -89,7 +106,7 @@ export default function MatchList({
   initialGames,
 }: {
   slug: string;
-  initialGames?: { pastGames: GameEntry[]; futureGames: GameEntry[] };
+  initialGames?: { pastGames: GameEntry[]; futureGames: GameEntry[]; friendlies?: FriendlyEntry[] };
 }) {
   const [detail, setDetail] = useState<PlayerDetail | null>(
     initialGames ? { slug, ...initialGames } : null
@@ -142,6 +159,33 @@ export default function MatchList({
           <p className="font-mono text-xs text-muted">Aucun historique disponible.</p>
         )}
       </div>
+
+      {detail.friendlies && detail.friendlies.length > 0 && (
+        <div>
+          <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">
+            Matchs de préparation
+          </p>
+          <ul className="divide-y divide-line">
+            {detail.friendlies.map((f) => (
+              <li key={f.gameId} className="py-1.5">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs truncate flex-1">{f.competition ?? "Amical"}</p>
+                  <span className="font-mono text-[11px] text-muted shrink-0">
+                    {f.started ? "titulaire" : f.minutes > 0 ? "entré en jeu" : "non utilisé"}
+                  </span>
+                </div>
+                <p className="text-[10px] font-mono text-muted mt-0.5 flex items-center gap-2">
+                  <span>{relativeDate(f.date)}</span>
+                  <span>{f.minutes}&apos;</span>
+                  {!!f.goals && <span className="text-ok">⚽ {f.goals}</span>}
+                  {!!f.assists && <span className="text-ok">🅰 {f.assists}</span>}
+                  {f.rating != null && <span title="Note API-Football (~1-10)">note {f.rating.toFixed(1)}</span>}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

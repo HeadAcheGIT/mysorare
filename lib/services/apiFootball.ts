@@ -88,6 +88,92 @@ export interface NoLineupYet {
   confirmed: false;
 }
 
+/**
+ * API-Football's league id for club friendlies. Sorare's own API carries
+ * international friendlies but no club pre-season games, so this is the only
+ * way to see who is actually playing again before the league restarts.
+ */
+export const FRIENDLIES_CLUBS_LEAGUE = 667;
+
+export interface FriendlyFixture {
+  fixtureId: number;
+  date: Date;
+  homeName: string;
+  awayName: string;
+  homeGoals: number | null;
+  awayGoals: number | null;
+}
+
+/** Recent club friendlies for a team, newest first. One request per club. */
+export async function recentFriendlies(
+  apiFootballTeamId: number,
+  season: number,
+  last = 5
+): Promise<FriendlyFixture[]> {
+  const data = await get<{
+    response: {
+      fixture: { id: number; date: string };
+      teams: { home: { name: string }; away: { name: string } };
+      goals: { home: number | null; away: number | null };
+    }[];
+  }>("/fixtures", { team: apiFootballTeamId, league: FRIENDLIES_CLUBS_LEAGUE, season, last });
+
+  return (data.response ?? []).map((f) => ({
+    fixtureId: f.fixture.id,
+    date: new Date(f.fixture.date),
+    homeName: f.teams.home.name,
+    awayName: f.teams.away.name,
+    homeGoals: f.goals.home,
+    awayGoals: f.goals.away,
+  }));
+}
+
+export interface FixturePlayerStat {
+  apiFootballPlayerId: number;
+  name: string;
+  minutes: number;
+  started: boolean;
+  goals: number | null;
+  assists: number | null;
+  rating: number | null;
+}
+
+/** Per-player stats for one fixture. One request per fixture — mind the 100/day free tier. */
+export async function fixturePlayerStats(apiFootballFixtureId: number): Promise<FixturePlayerStat[]> {
+  const data = await get<{
+    response: {
+      players: {
+        player: { id: number; name: string };
+        statistics: {
+          games: { minutes: number | null; rating: string | null; substitute: boolean | null };
+          goals: { total: number | null; assists: number | null };
+        }[];
+      }[];
+    }[];
+  }>("/fixtures/players", { fixture: apiFootballFixtureId });
+
+  const out: FixturePlayerStat[] = [];
+  for (const team of data.response ?? []) {
+    for (const p of team.players ?? []) {
+      const s = p.statistics?.[0];
+      if (!s) continue;
+      const minutes = s.games?.minutes ?? 0;
+      out.push({
+        apiFootballPlayerId: p.player.id,
+        name: p.player.name,
+        minutes,
+        // `substitute: false` means they were in the starting XI. A player who
+        // never came on has minutes 0 and shouldn't read as a starter either.
+        started: s.games?.substitute === false && minutes > 0,
+        goals: s.goals?.total ?? null,
+        assists: s.goals?.assists ?? null,
+        rating: s.games?.rating != null ? Number(s.games.rating) : null,
+      });
+    }
+  }
+  return out;
+}
+
 /** Only returns confirmed==true once the club has actually submitted a team sheet — usually 20-40 min pre-kickoff. */
 export async function confirmedLineup(apiFootballFixtureId: number): Promise<ConfirmedLineup | NoLineupYet> {
   const data = await get<{ response: { startXI: { player: { id: number } }[] }[] }>("/fixtures/lineups", {

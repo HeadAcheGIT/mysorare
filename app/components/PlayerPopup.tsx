@@ -169,7 +169,11 @@ export default function PlayerPopup({
                 <div className="bg-ink rounded-md px-3 py-2">
                   <MatchList
                     slug={detail.slug}
-                    initialGames={{ pastGames: detail.pastGames, futureGames: detail.futureGames }}
+                    initialGames={{
+                      pastGames: detail.pastGames,
+                      futureGames: detail.futureGames,
+                      friendlies: detail.friendlies,
+                    }}
                   />
                 </div>
               </div>

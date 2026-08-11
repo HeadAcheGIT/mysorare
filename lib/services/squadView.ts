@@ -43,13 +43,20 @@ export async function getSquadView(
     prisma.club.findMany(),
     resolvedFixture ? prisma.projection.findMany({ where: { fixtureSlug: resolvedFixture } }) : Promise.resolve([]),
     resolvedFixture ? prisma.override.findMany({ where: { fixtureSlug: resolvedFixture } }) : Promise.resolve([]),
-    // Most recent *dated* appearance per player. This is what tells the
-    // Sparkline whether "recent" scores are actually recent — recentScores
-    // itself is just the last few played games with no dates attached, so a
-    // player who played twice months ago and nothing since would otherwise
-    // read as being in current form.
+    // Most recent appearance per player where they actually got on the pitch.
+    // This is what tells the Sparkline whether "recent" scores are actually
+    // recent — recentScores itself is just the last few played games with no
+    // dates attached, so a player who played twice months ago and nothing
+    // since would otherwise read as being in current form.
+    //
+    // minutes > 0 matters: an unused substitute is on the game sheet but
+    // hasn't played, and counting that as "played" is exactly the false
+    // reassurance this whole signal exists to prevent. Club pre-season
+    // friendlies count here too (see lib/services/friendlies.ts), so a
+    // player back in action during the break doesn't read as inactive.
     prisma.appearance.groupBy({
       by: ["playerSlug"],
+      where: { minutes: { gt: 0 } },
       _max: { gameDate: true },
     }),
   ]);
