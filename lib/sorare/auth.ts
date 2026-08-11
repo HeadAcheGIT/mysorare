@@ -87,12 +87,18 @@ export async function signInWithPassword(email: string, password: string): Promi
   });
   const signIn = data?.data?.signIn ?? {};
 
-  const errors = collectErrors(signIn);
-  if (errors) throw new SorareAuthError(errors);
-
+  // The challenge is checked before the errors on purpose. Sorare answers a
+  // 2FA-protected account with BOTH an error ("2fa_missing") and the challenge
+  // to complete — the error explains why you aren't signed in, the challenge is
+  // how to continue. Reading the error first turned the normal 2FA path into a
+  // dead end.
   if (signIn.otpSessionChallenge) {
     return { status: "otp_required", challenge: signIn.otpSessionChallenge };
   }
+
+  const errors = collectErrors(signIn);
+  if (errors) throw new SorareAuthError(errors);
+
   if (!signIn.jwtToken) {
     throw new SorareAuthError(
       "Connexion sans token. Vérifie tes identifiants, ou accepte les conditions mises à jour sur sorare.com."

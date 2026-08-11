@@ -12,6 +12,7 @@ import SorareLogin from "./components/SorareLogin";
 import Deadline, { type GameWeek } from "./components/Deadline";
 import InsightList, { type InsightGroup } from "./components/InsightList";
 import DataHealth from "./components/DataHealth";
+import Scouting from "./components/Scouting";
 
 type OptimiseResult = {
   fixture: string | null;
@@ -599,7 +600,18 @@ export default function Page() {
         )}
 
         {tab === "market" && (
-          <section aria-label="Marché">
+          <section aria-label="Marché" className="space-y-6">
+            <div>
+              <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
+                Scouting par championnat
+              </h2>
+              <Scouting onError={setError} />
+            </div>
+
+            <div>
+              <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
+                Recherche par nom
+              </h2>
             <div className="flex gap-2 mb-4">
               <input
                 value={marketQuery}
@@ -643,6 +655,8 @@ export default function Page() {
                 ))}
               </ul>
             )}
+
+            </div>
 
             <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">Ma watchlist</h2>
             <ul className="flex flex-col gap-2">
