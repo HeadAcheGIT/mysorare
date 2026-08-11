@@ -144,13 +144,21 @@ déclenche quand tu tapes dans l'app.
 - **Prix** : bouton « Prix » → `PLAYER_MARKET` renvoie le plancher de prix
   (la plus petite annonce en cours) par rareté, à l'instant T.
 - **Watchlist** : « + Suivre » sauvegarde le joueur en base (table
-  `WatchlistItem`). « Tout vérifier » relance un appel prix pour chaque
-  joueur suivi, en série — toujours à la demande, jamais en tâche de fond.
+  `WatchlistItem`, rattachée à une `WatchlistGroup`). On peut créer
+  plusieurs listes nommées (« Cibles Ligue 1 », « Bons plans », etc.) et un
+  même joueur peut apparaître dans plusieurs listes à la fois.
+- **Alertes prix et transferts** : une fois par jour, `/api/cron/alerts`
+  compare le floor price actuel de chaque joueur possédé ou suivi à sa
+  dernière valeur connue (icône 📉/📈 sur la carte si le mouvement dépasse
+  10 %), et cherche une actualité récente au vocabulaire "transfert" (icône
+  📰). Volontairement lent et borné à ce qui est réellement suivi — jamais
+  un scan de tout le marché, et jamais en direct sur une simple ouverture
+  d'écran. Voir `lib/services/alerts.ts`.
 
-Pour les rumeurs, blessures, actu transferts : c'est le rôle de la
-conversation avec Claude, pas de l'app. Poser la question directement marche
-mieux qu'un flux automatisé — pas d'API X payante à intégrer, et Claude peut
-chercher sur le web à la demande.
+Pour tout le reste (rumeurs détaillées, contexte, actu générale) : c'est le
+rôle de la conversation avec Claude, pas de l'app. Poser la question
+directement marche mieux qu'un flux automatisé pour ce qui n'est pas déjà
+un signal chiffré ci-dessus.
 
 ## Pourquoi la synchro est en deux temps
 
@@ -258,10 +266,29 @@ se fait dans `lib/sorare/queries.ts`, en général une ligne.
   fichier partagé…), change-le sur sorare.com avant de continuer, et active
   la 2FA si ce n'est pas déjà fait.
 
+## Tests
+
+```bash
+npm test                  # 72 tests unitaires, aucune dépendance externe
+npm run test:integration  # contre une vraie base Postgres jetable, voir plus bas
+```
+
+Pour les tests d'intégration, une base Postgres jetable (jamais la vraie
+base de prod) :
+
+```bash
+docker run -d --name sorare-test-pg -e POSTGRES_PASSWORD=test -e POSTGRES_DB=sorare_test -p 55432:5432 postgres:16-alpine
+DATABASE_URL=postgresql://postgres:test@localhost:55432/sorare_test npx prisma migrate deploy
+DATABASE_URL=postgresql://postgres:test@localhost:55432/sorare_test npm run test:integration
+```
+
+Voir `CHANGELOG.md` pour l'historique détaillé des évolutions du projet.
+
 ## Suite logique
 
-- Marché & alertes transferts : la requête `CardMarket` existe côté Python
-  dans la version précédente du projet, à porter ici si tu veux ce module.
+- Vue « terrain » pour l'onglet Compo (formation visuelle plutôt que liste),
+  si l'app doit un jour se rapprocher de l'expérience native Sorare —
+  actuellement un choix assumé de rester un outil de conseil.
 - Comparaison compo jouée / meilleure compo possible a posteriori.
 - Notifications push quand une projection change fortement avant un game
   week (nécessite un provider push, ex. OneSignal ou Web Push natif).
