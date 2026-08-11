@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import MatchList, { type MatchListDetail } from "./MatchList";
+import PlayerNews from "./PlayerNews";
 import { POSITION_LABEL } from "@/lib/types";
 
 type PlayerDetail = MatchListDetail & {
@@ -170,6 +171,13 @@ export default function PlayerPopup({
                     slug={detail.slug}
                     initialGames={{ pastGames: detail.pastGames, futureGames: detail.futureGames }}
                   />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">Actualités</p>
+                <div className="bg-ink rounded-md px-3 py-2">
+                  <PlayerNews name={detail.name} />
                 </div>
               </div>
 

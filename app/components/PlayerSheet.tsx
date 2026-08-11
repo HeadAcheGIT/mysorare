@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import Sparkline from "./Sparkline";
 import MatchList from "./MatchList";
+import PlayerNews from "./PlayerNews";
 import { POSITION_LABEL, rarityOf, type SquadCard } from "@/lib/types";
 
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
@@ -131,6 +132,13 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
             <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">Matchs</p>
             <div className="bg-ink rounded-md px-3 py-2">
               <MatchList slug={card.playerSlug} />
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">Actualités</p>
+            <div className="bg-ink rounded-md px-3 py-2">
+              <PlayerNews name={card.name} />
             </div>
           </div>
 
