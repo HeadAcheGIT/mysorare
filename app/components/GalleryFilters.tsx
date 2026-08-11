@@ -1,6 +1,6 @@
 "use client";
 
-export type SortKey = "score" | "name" | "price" | "form";
+export type SortKey = "score" | "name" | "price" | "form" | "titu";
 
 const POSITIONS = [
   ["", "Tous"],
@@ -13,6 +13,7 @@ const POSITIONS = [
 const SORTS: [SortKey, string][] = [
   ["score", "Score"],
   ["form", "Forme"],
+  ["titu", "% Titu"],
   ["price", "Valeur"],
   ["name", "Nom"],
 ];

@@ -1,7 +1,8 @@
 "use client";
 
 import Sparkline from "./Sparkline";
-import { POSITION_SHORT, rarityOf, type SquadCard } from "@/lib/types";
+import AlertBadges, { type PlayerAlert } from "./AlertBadges";
+import { POSITION_SHORT, rarityOf, scoreColor, SCORE_COLOR_CLASS, u23Status, type SquadCard } from "@/lib/types";
 
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
@@ -15,9 +16,14 @@ const eur = (v: number | null) => (v == null ? "—" : `${v.toFixed(2)} €`);
 export default function PlayerCard({
   card,
   onSelect,
+  coveredLeagues,
+  alerts,
 }: {
   card: SquadCard;
   onSelect?: (card: SquadCard) => void;
+  /** Slugs of leagues the scouting tab can actually search — see /api/scouting. */
+  coveredLeagues?: Set<string>;
+  alerts?: PlayerAlert[];
 }) {
   const rarity = rarityOf(card.rarity);
   // Our own projection when it exists, else Sorare's, else the CSV average —
@@ -25,13 +31,18 @@ export default function PlayerCard({
   const score = card.expected ?? card.sorareProjection ?? card.l10;
   const scoreLabel = card.expected != null ? "projeté" : card.sorareProjection != null ? "Sorare" : "L10";
   const unavailable = card.injury || card.suspended;
+  const u23 = u23Status(card.birthDate);
+  const covered = card.competitionSlug ? coveredLeagues?.has(card.competitionSlug) : undefined;
+  const isUnique = card.rarity === "unique";
 
   return (
     <li>
       <button
         type="button"
         onClick={() => onSelect?.(card)}
-        className={`w-full text-left flex items-center gap-3 p-3 rounded-lg bg-ink2 border border-line border-l-[3px] ${rarity.border} transition-colors hover:bg-line/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-flood`}
+        className={`w-full text-left flex items-center gap-3 p-3 rounded-lg bg-ink2 border-t border-r border-b border-t-line border-r-line border-b-line border-l-[3px] transition-colors hover:bg-line/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-flood ${
+          isUnique ? "border-l-transparent rarity-unique-edge" : rarity.border
+        }`}
       >
         <div className="relative shrink-0">
           {card.picture ? (
@@ -61,13 +72,11 @@ export default function PlayerCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="font-bold truncate">{card.name}</span>
+            <AlertBadges alerts={alerts} />
             {unavailable && (
               <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-warn/15 text-warn font-mono">
                 {card.suspended ? "suspendu" : "blessé"}
               </span>
-            )}
-            {card.inSeason && !unavailable && (
-              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-ok/15 text-ok font-mono">IS</span>
             )}
           </div>
 
@@ -78,8 +87,41 @@ export default function PlayerCard({
             {card.serial != null && <span className="text-muted/70"> · #{card.serial}</span>}
           </p>
 
+          {/* Second-tier signals — eligibility and division. Kept off the name
+              row on purpose (see PlayerCard audit note H-2): a long real name
+              was losing the truncation fight against 3+ badges. */}
+          <p className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {card.inSeason && !unavailable && (
+              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-ok/15 text-ok font-mono" title="Éligible in-season">
+                IS
+              </span>
+            )}
+            {!card.inSeason && !unavailable && (
+              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-line/50 text-muted font-mono" title="Classic uniquement">
+                CL
+              </span>
+            )}
+            {u23?.eligible && (
+              <span
+                className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-flood/15 text-flood font-mono"
+                title={`U23 · éligible jusqu'au ${u23.validUntil.toLocaleDateString("fr-FR")}`}
+              >
+                U23
+              </span>
+            )}
+            {card.competitionName && (
+              <span
+                className={`text-[10px] font-mono truncate ${covered === false ? "text-warn" : "text-muted"}`}
+                title={covered === false ? "Championnat non couvert par le scouting marché" : undefined}
+              >
+                {card.competitionName}
+                {covered === false && " · non couvert"}
+              </span>
+            )}
+          </p>
+
           <div className="flex items-center gap-3 mt-1.5">
-            <Sparkline scores={card.recentScores} />
+            <Sparkline scores={card.recentScores} lastPlayedAt={card.lastPlayedAt} />
             <span className="font-mono text-[11px] text-muted">
               {card.pStart != null ? `titu ${pct(card.pStart)}` : eur(card.floorPrice)}
             </span>
@@ -87,7 +129,9 @@ export default function PlayerCard({
         </div>
 
         <div className="text-right shrink-0 w-14">
-          <span className="font-display text-2xl font-bold leading-none block">{one(score)}</span>
+          <span className={`font-display text-2xl font-bold leading-none block ${SCORE_COLOR_CLASS[scoreColor(score)]}`}>
+            {one(score)}
+          </span>
           <span className="block text-[10px] font-mono text-muted">{scoreLabel}</span>
         </div>
       </button>

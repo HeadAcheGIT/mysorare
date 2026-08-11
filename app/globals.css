@@ -28,4 +28,23 @@
   .safe-top {
     padding-top: env(safe-area-inset-top);
   }
+
+  /*
+   * Unique is the rarest tier and used to render as a flat white edge —
+   * visually quieter than a Super Rare. This gives it a foil-like gradient
+   * instead, built from the app's own gold/magenta/turquoise tokens so it
+   * reads as "contains every rarity below it" rather than an arbitrary rainbow.
+   */
+  .rarity-unique-edge {
+    position: relative;
+  }
+  .rarity-unique-edge::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, theme("colors.flood") 0%, theme("colors.superrare") 50%, theme("colors.rare") 100%);
+  }
 }

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { apiFetch, ApiFetchError } from "@/lib/apiFetch";
 import { POSITION_SHORT, type SquadCard, type SquadResponse } from "@/lib/types";
 import PlayerCard from "./components/PlayerCard";
+import AlertBadges, { type PlayerAlert } from "./components/AlertBadges";
+import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, HistoryIcon, DataIcon } from "./components/NavIcons";
 import PlayerSheet from "./components/PlayerSheet";
 import GalleryFilters, { type SortKey } from "./components/GalleryFilters";
 import GallerySummary from "./components/GallerySummary";
@@ -49,7 +51,7 @@ const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
 const msg = (e: unknown) => (e instanceof ApiFetchError || e instanceof Error ? e.message : "Erreur inattendue");
 
 export default function Page() {
-  const [tab, setTab] = useState<"week" | "gallery" | "lineup" | "market" | "settings">("week");
+  const [tab, setTab] = useState<"week" | "gallery" | "lineup" | "market" | "history" | "settings">("week");
   const [gameWeek, setGameWeek] = useState<GameWeek | null>(null);
   const [insights, setInsights] = useState<InsightGroup[]>([]);
   const [unenriched, setUnenriched] = useState(0);
@@ -92,12 +94,41 @@ export default function Page() {
   const [inSeasonOnly, setInSeasonOnly] = useState(false);
 
   // Line-up
-  const [competitions, setCompetitions] = useState<{ name: string }[]>([]);
+  const [competitions, setCompetitions] = useState<{ name: string; displayName: string }[]>([]);
   const [competition, setCompetition] = useState("");
   const [lineup, setLineup] = useState<OptimiseResult | null>(null);
   const [building, setBuilding] = useState(false);
   const [savedLineups, setSavedLineups] = useState<SavedLineup[]>([]);
   const [savingLineup, setSavingLineup] = useState(false);
+
+  // History
+  type SaleRow = {
+    cardSlug: string;
+    playerSlug: string;
+    playerName: string;
+    rarity: string;
+    season: number | null;
+    serialNumber: number | null;
+    boughtPrice: number | null;
+    lastKnownPrice: number | null;
+    lastFloorPrice: number | null;
+    lastEstimatedPrice: number | null;
+    detectedAt: string;
+    currentFloor: number | null;
+    changePct: number | null;
+  };
+  const [sales, setSales] = useState<SaleRow[]>([]);
+  const [salesLoading, setSalesLoading] = useState(false);
+  const loadSales = useCallback(async () => {
+    setSalesLoading(true);
+    try {
+      setSales(await apiFetch<SaleRow[]>("/api/sales"));
+    } catch (err) {
+      setError(msg(err));
+    } finally {
+      setSalesLoading(false);
+    }
+  }, []);
 
   // Settings
   const [logs, setLogs] = useState<{ job: string; status: string; detail: string | null; ranAt: string }[]>([]);
@@ -112,9 +143,12 @@ export default function Page() {
     { slug: string; name: string; position: string; club: string | null }[]
   >([]);
   const [marketLoading, setMarketLoading] = useState(false);
-  const [watchlist, setWatchlist] = useState<
-    { playerSlug: string; label: string; position: string | null; club: string | null }[]
-  >([]);
+  type WatchlistItemRow = { playerSlug: string; label: string; position: string | null; club: string | null };
+  type WatchlistGroupRow = { id: number; name: string; items: WatchlistItemRow[] };
+  const [watchlistGroups, setWatchlistGroups] = useState<WatchlistGroupRow[]>([]);
+  const [activeWatchlistGroup, setActiveWatchlistGroup] = useState<number | null>(null);
+  const [newGroupName, setNewGroupName] = useState("");
+  const watchlist = watchlistGroups.find((g) => g.id === activeWatchlistGroup)?.items ?? [];
   const [prices, setPrices] = useState<
     Record<string, { floorByRarity: Record<string, number | null>; listedCount: number } | "loading" | "error">
   >({});
@@ -133,11 +167,34 @@ export default function Page() {
 
   const loadCompetitions = useCallback(async () => {
     try {
-      const data = await apiFetch<{ name: string }[]>("/api/competitions");
+      const data = await apiFetch<{ name: string; displayName: string }[]>("/api/competitions");
       setCompetitions(data);
       setCompetition((c) => c || data[0]?.name || "");
     } catch (err) {
       setError(msg(err));
+    }
+  }, []);
+
+  // Which leagues the market scouting tab can actually search — used to flag
+  // a player's championship badge as "non couvert" when it can't.
+  const [coveredLeagues, setCoveredLeagues] = useState<Set<string>>(new Set());
+  const loadCoveredLeagues = useCallback(async () => {
+    try {
+      const data = await apiFetch<{ leagues: { slug: string }[] }>("/api/scouting");
+      setCoveredLeagues(new Set(data.leagues.map((l) => l.slug)));
+    } catch {
+      // Non-blocking: badges just fall back to showing no coverage indicator.
+    }
+  }, []);
+
+  // Price-move / transfer-rumor alerts for owned + watchlisted players — see
+  // lib/services/alerts.ts. Computed daily by cron, just read here.
+  const [alertsBySlug, setAlertsBySlug] = useState<Record<string, PlayerAlert[]>>({});
+  const loadAlerts = useCallback(async () => {
+    try {
+      setAlertsBySlug(await apiFetch<Record<string, PlayerAlert[]>>("/api/alerts"));
+    } catch {
+      // Non-blocking: alert icons just don't show up.
     }
   }, []);
 
@@ -159,7 +216,9 @@ export default function Page() {
 
   const loadWatchlist = useCallback(async () => {
     try {
-      setWatchlist(await apiFetch("/api/watchlist"));
+      const groups = await apiFetch<WatchlistGroupRow[]>("/api/watchlist");
+      setWatchlistGroups(groups);
+      setActiveWatchlistGroup((cur) => (cur != null && groups.some((g) => g.id === cur) ? cur : groups[0]?.id ?? null));
     } catch (err) {
       setError(msg(err));
     }
@@ -198,7 +257,9 @@ export default function Page() {
     loadCompetitions();
     loadGameWeek();
     loadInsights();
-  }, [loadSquad, loadCompetitions, loadGameWeek, loadInsights]);
+    loadCoveredLeagues();
+    loadAlerts();
+  }, [loadSquad, loadCompetitions, loadGameWeek, loadInsights, loadCoveredLeagues, loadAlerts]);
 
   useEffect(() => {
     if (tab === "settings") {
@@ -207,7 +268,8 @@ export default function Page() {
     }
     if (tab === "market") loadWatchlist();
     if (tab === "lineup" && fixture) loadSavedLineups(fixture);
-  }, [tab, fixture, loadLogs, loadTokenStatus, loadWatchlist, loadSavedLineups]);
+    if (tab === "history") loadSales();
+  }, [tab, fixture, loadLogs, loadTokenStatus, loadWatchlist, loadSavedLineups, loadSales]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -227,6 +289,7 @@ export default function Page() {
       if (sort === "name") return a.name.localeCompare(b.name, "fr");
       if (sort === "price") return (b.floorPrice ?? -1) - (a.floorPrice ?? -1);
       if (sort === "form") return formAvg(b) - formAvg(a);
+      if (sort === "titu") return (b.pStart ?? -1) - (a.pStart ?? -1);
       return score(b) - score(a);
     });
   }, [squad, search, position, rarity, inSeasonOnly, sort]);
@@ -382,7 +445,13 @@ export default function Page() {
       await apiFetch("/api/watchlist", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ playerSlug: p.slug, label: p.name, position: p.position, club: p.club }),
+        body: JSON.stringify({
+          playerSlug: p.slug,
+          label: p.name,
+          position: p.position,
+          club: p.club,
+          groupId: activeWatchlistGroup,
+        }),
       });
       await loadWatchlist();
     } catch (err) {
@@ -390,9 +459,44 @@ export default function Page() {
     }
   }
 
-  async function removeFromWatchlist(slug: string) {
+  async function addWatchlistGroup() {
+    if (!newGroupName.trim()) return;
     try {
-      await apiFetch(`/api/watchlist?playerSlug=${encodeURIComponent(slug)}`, { method: "DELETE" });
+      const group = await apiFetch<WatchlistGroupRow>("/api/watchlist/groups", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: newGroupName.trim() }),
+      });
+      setNewGroupName("");
+      await loadWatchlist();
+      setActiveWatchlistGroup(group.id);
+    } catch (err) {
+      setError(msg(err));
+    }
+  }
+
+  async function deleteWatchlistGroup(id: number) {
+    const group = watchlistGroups.find((g) => g.id === id);
+    const count = group?.items.length ?? 0;
+    const label = group?.name ?? "cette liste";
+    if (!window.confirm(`Supprimer « ${label} » ? ${count} joueur${count === 1 ? "" : "s"} suivi${count === 1 ? "" : "s"} seront retirés.`)) {
+      return;
+    }
+    try {
+      await apiFetch(`/api/watchlist/groups?id=${id}`, { method: "DELETE" });
+      await loadWatchlist();
+    } catch (err) {
+      setError(msg(err));
+    }
+  }
+
+  async function removeFromWatchlist(slug: string) {
+    if (activeWatchlistGroup == null) return;
+    try {
+      await apiFetch(
+        `/api/watchlist?playerSlug=${encodeURIComponent(slug)}&groupId=${activeWatchlistGroup}`,
+        { method: "DELETE" }
+      );
       await loadWatchlist();
     } catch (err) {
       setError(msg(err));
@@ -498,7 +602,13 @@ export default function Page() {
                 </p>
                 <ul className="flex flex-col gap-2">
                   {visible.map((c) => (
-                    <PlayerCard key={c.cardSlug} card={c} onSelect={setSelected} />
+                    <PlayerCard
+                      key={c.cardSlug}
+                      card={c}
+                      onSelect={setSelected}
+                      coveredLeagues={coveredLeagues}
+                      alerts={alertsBySlug[c.playerSlug]}
+                    />
                   ))}
                 </ul>
                 {visible.length === 0 && (
@@ -520,7 +630,7 @@ export default function Page() {
               >
                 {competitions.map((c) => (
                   <option key={c.name} value={c.name}>
-                    {c.name}
+                    {c.displayName}
                   </option>
                 ))}
               </select>
@@ -671,7 +781,10 @@ export default function Page() {
                           onClick={() => openPlayer(p.slug)}
                           className="min-w-0 text-left hover:underline decoration-muted underline-offset-2"
                         >
-                          <p className="font-bold truncate">{p.name}</p>
+                          <p className="font-bold truncate flex items-center gap-1.5">
+                            {p.name}
+                            <AlertBadges alerts={alertsBySlug[p.slug]} />
+                          </p>
                           <p className="text-xs text-muted truncate">
                             {POSITION_SHORT[p.position] ?? p.position} · {p.club ?? "—"}
                           </p>
@@ -714,7 +827,52 @@ export default function Page() {
 
             </div>
 
-            <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">Ma watchlist</h2>
+            <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">Mes listes de suivi</h2>
+
+            <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1" role="tablist" aria-label="Listes de suivi">
+              {watchlistGroups.map((g) => (
+                <button
+                  key={g.id}
+                  role="tab"
+                  aria-selected={activeWatchlistGroup === g.id}
+                  onClick={() => setActiveWatchlistGroup(g.id)}
+                  className={`shrink-0 px-3 py-1.5 rounded-md text-xs font-mono border ${
+                    activeWatchlistGroup === g.id
+                      ? "bg-flood text-ink border-flood font-bold"
+                      : "border-line text-muted"
+                  }`}
+                >
+                  {g.name} ({g.items.length})
+                </button>
+              ))}
+              {watchlistGroups.length > 1 && activeWatchlistGroup != null && (
+                <button
+                  onClick={() => deleteWatchlistGroup(activeWatchlistGroup)}
+                  aria-label="Supprimer cette liste"
+                  className="shrink-0 text-xs text-warn border border-warn rounded-md px-2 py-1.5"
+                >
+                  Suppr. liste
+                </button>
+              )}
+            </div>
+
+            <div className="flex gap-2 mb-4">
+              <input
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addWatchlistGroup()}
+                placeholder="Nouvelle liste (ex: Cibles Ligue 1)"
+                aria-label="Nom de la nouvelle liste de suivi"
+                className="flex-1 bg-ink border border-line rounded-md px-3 py-2 text-sm"
+              />
+              <button
+                onClick={addWatchlistGroup}
+                className="text-xs border border-line rounded-md px-3 py-2"
+              >
+                + Liste
+              </button>
+            </div>
+
             <ul className="flex flex-col gap-2">
               {watchlist.map((w) => {
                 const price = prices[w.playerSlug];
@@ -726,7 +884,10 @@ export default function Page() {
                         onClick={() => openPlayer(w.playerSlug)}
                         className="min-w-0 text-left hover:underline decoration-muted underline-offset-2"
                       >
-                        <p className="font-bold truncate">{w.label}</p>
+                        <p className="font-bold truncate flex items-center gap-1.5">
+                          {w.label}
+                          <AlertBadges alerts={alertsBySlug[w.playerSlug]} />
+                        </p>
                         <p className="text-xs text-muted truncate">
                           {w.position ? POSITION_SHORT[w.position] ?? w.position : ""}
                           {w.club ? ` · ${w.club}` : ""}
@@ -768,6 +929,62 @@ export default function Page() {
                   Cherche un joueur ci-dessus et tape « + Suivre » pour l&apos;ajouter ici.
                 </p>
               )}
+            </ul>
+          </section>
+        )}
+
+        {tab === "history" && (
+          <section aria-label="Historique" className="space-y-3">
+            <p className="font-mono text-xs text-muted mb-2">
+              Cartes disparues de ta galerie lors d&apos;un import CSV — vendues ou transférées, l&apos;export ne fait
+              pas la différence. Le prix affiché est ta dernière valorisation SorareScore avant disparition, pas un
+              reçu de vente confirmé.
+            </p>
+
+            {salesLoading && <p className="font-mono text-sm text-muted">Chargement…</p>}
+
+            {!salesLoading && sales.length === 0 && (
+              <p className="font-mono text-sm text-muted">Aucune carte vendue ou transférée détectée pour l&apos;instant.</p>
+            )}
+
+            <ul className="flex flex-col gap-2">
+              {sales.map((s) => {
+                const reference = s.lastKnownPrice ?? s.lastFloorPrice;
+                return (
+                  <li key={s.cardSlug} className="p-3 rounded-lg bg-ink2 border border-line">
+                    <button
+                      type="button"
+                      onClick={() => openPlayer(s.playerSlug)}
+                      className="w-full text-left"
+                    >
+                      <p className="font-bold truncate">{s.playerName}</p>
+                      <p className="text-xs text-muted truncate">
+                        {s.rarity}
+                        {s.season != null && ` · saison ${s.season}`}
+                        {s.serialNumber != null && ` · #${s.serialNumber}`}
+                        {" · "}
+                        {new Date(s.detectedAt).toLocaleDateString("fr-FR")}
+                      </p>
+                    </button>
+
+                    <div className="mt-2 font-mono text-xs flex flex-wrap gap-x-4 gap-y-1 text-muted">
+                      {s.boughtPrice != null && <span>Acheté {s.boughtPrice.toFixed(2)} €</span>}
+                      {reference != null && <span>Dernière valo {reference.toFixed(2)} €</span>}
+                      {s.currentFloor != null && <span>Floor actuel {s.currentFloor.toFixed(2)} €</span>}
+                    </div>
+
+                    {s.changePct != null ? (
+                      <p className={`mt-1 text-xs font-mono ${s.changePct > 0 ? "text-warn" : "text-ok"}`}>
+                        {s.changePct > 0
+                          ? `Le prix a monté de ${s.changePct.toFixed(0)}% depuis — vendre était discutable`
+                          : `Le prix a baissé de ${Math.abs(s.changePct).toFixed(0)}% depuis — bon call`}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs font-mono text-muted">Pas assez de données pour comparer</p>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}
@@ -838,21 +1055,23 @@ export default function Page() {
         <div className="max-w-3xl mx-auto flex">
           {(
             [
-              ["week", "Semaine"],
-              ["gallery", "Galerie"],
-              ["lineup", "Compo"],
-              ["market", "Marché"],
-              ["settings", "Données"],
+              ["week", "Semaine", WeekIcon],
+              ["gallery", "Galerie", GalleryIcon],
+              ["lineup", "Compo", LineupIcon],
+              ["market", "Marché", MarketIcon],
+              ["history", "Historique", HistoryIcon],
+              ["settings", "Données", DataIcon],
             ] as const
-          ).map(([key, label]) => (
+          ).map(([key, label, Icon]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
               aria-current={tab === key ? "page" : undefined}
-              className={`flex-1 py-3 text-sm font-display uppercase tracking-wide border-t-2 ${
+              className={`flex-1 min-h-[48px] py-2 flex flex-col items-center justify-center gap-0.5 text-[11px] font-display uppercase tracking-wide border-t-2 ${
                 tab === key ? "text-flood border-flood" : "text-muted border-transparent"
               }`}
             >
+              <Icon />
               {label}
             </button>
           ))}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import { POSITION_SHORT } from "@/lib/types";
 import { formatMoney as money, relativeDate as daysAgo } from "@/lib/format";
+import { scoreColor, SCORE_COLOR_CLASS } from "@/lib/types";
 
 type Money = { amount: number; currency: string } | null;
 
@@ -138,11 +139,41 @@ export default function Scouting({
           className="flex-1 min-w-0 bg-ink border border-line rounded-md px-2 py-2 text-sm"
         >
           {leagues.length === 0 && <option value="ligue-1-fr">Ligue 1</option>}
-          {leagues.map((l) => (
-            <option key={l.slug} value={l.slug}>
-              {l.name}
-            </option>
-          ))}
+          {(() => {
+            const pinned = leagues.filter((l) => PINNED.includes(l.slug));
+            const rest = leagues.filter((l) => !PINNED.includes(l.slug));
+            // Country present = domestic league; absent = international
+            // competition (continental cups, qualifiers, ...). Splitting the
+            // 50+ remaining entries into these two groups at least gives the
+            // select some structure instead of one flat alphabetical wall.
+            const international = rest.filter((l) => !l.country);
+            const domestic = rest.filter((l) => l.country);
+            return (
+              <>
+                {pinned.length > 0 && (
+                  <optgroup label="Épinglés">
+                    {pinned.map((l) => (
+                      <option key={l.slug} value={l.slug}>{l.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {domestic.length > 0 && (
+                  <optgroup label="Championnats domestiques">
+                    {domestic.map((l) => (
+                      <option key={l.slug} value={l.slug}>{l.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {international.length > 0 && (
+                  <optgroup label="Compétitions internationales">
+                    {international.map((l) => (
+                      <option key={l.slug} value={l.slug}>{l.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </>
+            );
+          })()}
         </select>
         <select
           value={rarity}
@@ -220,7 +251,7 @@ export default function Scouting({
                     {p.club ? ` · ${p.club}` : ""}
                   </p>
                   <p className="font-mono text-[11px] text-muted mt-0.5">
-                    L5 {p.avgL5?.toFixed(0) ?? "—"} · joué {p.app15 ?? "—"}/15
+                    L5 <span className={p.avgL5 != null ? SCORE_COLOR_CLASS[scoreColor(p.avgL5)] : ""}>{p.avgL5?.toFixed(0) ?? "—"}</span> · joué {p.app15 ?? "—"}/15
                   </p>
                 </div>
 
@@ -229,7 +260,14 @@ export default function Scouting({
                     {money(t?.lastSale ?? null)}
                   </p>
                   {t?.trendPct != null ? (
-                    <p className={`text-[11px] font-mono ${t.trendPct >= 0 ? "text-warn" : "text-ok"}`}>
+                    <p
+                      className={`text-[11px] font-mono ${t.trendPct >= 0 ? "text-warn" : "text-ok"}`}
+                      title={
+                        t.trendPct >= 0
+                          ? "Prix en hausse — plus cher à l'achat qu'avant"
+                          : "Prix en baisse — moins cher à l'achat qu'avant"
+                      }
+                    >
                       {t.trendPct >= 0 ? "▲" : "▼"} {Math.abs(t.trendPct).toFixed(0)}%
                     </p>
                   ) : (

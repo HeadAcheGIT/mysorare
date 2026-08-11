@@ -6,15 +6,28 @@
  * baseline is drawn at 50 rather than at the series minimum — a flat line of
  * 20s and a flat line of 80s must not look identical.
  */
+import { daysSince, isStale, isTrendingGood } from "@/lib/sparkline";
+
 export default function Sparkline({
   scores,
+  lastPlayedAt,
   width = 76,
   height = 24,
 }: {
   scores: number[];
+  /** ISO date of the most recent known appearance, if any — see SquadCard.lastPlayedAt. */
+  lastPlayedAt?: string | null;
   width?: number;
   height?: number;
 }) {
+  if (isStale(lastPlayedAt)) {
+    return (
+      <span className="text-[10px] font-mono text-muted">
+        inactif depuis {Math.floor(daysSince(lastPlayedAt as string))}j
+      </span>
+    );
+  }
+
   if (scores.length < 2) {
     return <span className="text-[10px] font-mono text-muted">pas d&apos;historique</span>;
   }
@@ -30,8 +43,7 @@ export default function Sparkline({
 
   const path = series.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   const last = series[series.length - 1];
-  const avg = series.reduce((a, b) => a + b, 0) / series.length;
-  const good = last >= avg;
+  const good = isTrendingGood(series);
 
   return (
     <svg

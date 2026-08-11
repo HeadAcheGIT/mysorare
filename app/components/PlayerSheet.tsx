@@ -4,17 +4,17 @@ import { useEffect } from "react";
 import Sparkline from "./Sparkline";
 import MatchList from "./MatchList";
 import PlayerNews from "./PlayerNews";
-import { POSITION_LABEL, rarityOf, type SquadCard } from "@/lib/types";
+import { POSITION_LABEL, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
 
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
 const eur = (v: number | null) => (v == null ? "—" : `${v.toFixed(2)} €`);
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" }) {
+function Stat({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" | "neutral" }) {
   return (
     <div className="bg-ink rounded-md px-3 py-2">
       <p className="text-[10px] font-mono uppercase tracking-wide text-muted">{label}</p>
-      <p className={`font-display text-xl leading-tight ${tone === "ok" ? "text-ok" : tone === "warn" ? "text-warn" : ""}`}>
+      <p className={`font-display text-xl leading-tight ${tone ? SCORE_COLOR_CLASS[tone] : ""}`}>
         {value}
       </p>
     </div>
@@ -36,6 +36,7 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
   }, [onClose]);
 
   const rarity = rarityOf(card.rarity);
+  const isUnique = card.rarity === "unique";
   const profit = card.price != null && card.boughtPrice != null ? card.price - card.boughtPrice : null;
 
   return (
@@ -48,7 +49,11 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
         aria-label={card.name}
         className="relative w-full sm:max-w-md bg-ink2 border-t sm:border border-line sm:rounded-xl rounded-t-2xl max-h-[85vh] overflow-y-auto safe-bottom"
       >
-        <div className={`flex items-center gap-3 p-4 border-b border-line border-l-[3px] ${rarity.border}`}>
+        <div
+          className={`flex items-center gap-3 p-4 border-b border-b-line border-l-[3px] ${
+            isUnique ? "border-l-transparent rarity-unique-edge" : rarity.border
+          }`}
+        >
           {card.picture ? (
             // eslint-disable-next-line @next/next/no-img-element -- remote Sorare CDN
             <img src={card.picture} alt="" className="w-16 h-16 rounded-full object-cover bg-ink shrink-0" />
@@ -89,7 +94,7 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
           <div>
             <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">Forme récente</p>
             <div className="flex items-center gap-3 bg-ink rounded-md px-3 py-2">
-              <Sparkline scores={card.recentScores} width={140} height={34} />
+              <Sparkline scores={card.recentScores} lastPlayedAt={card.lastPlayedAt} width={140} height={34} />
               <span className="font-mono text-xs text-muted">
                 {card.recentScores.length ? `${card.recentScores.length} matchs` : "—"}
               </span>
@@ -97,12 +102,12 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
           </div>
 
           <div className="grid grid-cols-3 gap-2">
-            <Stat label="Projeté" value={one(card.expected)} />
-            <Stat label="Sorare" value={one(card.sorareProjection)} />
-            <Stat label="L10" value={one(card.l10)} />
+            <Stat label="Projeté" value={one(card.expected)} tone={scoreColor(card.expected)} />
+            <Stat label="Sorare" value={one(card.sorareProjection)} tone={scoreColor(card.sorareProjection)} />
+            <Stat label="L10" value={one(card.l10)} tone={scoreColor(card.l10)} />
             <Stat label="Titulaire" value={pct(card.pStart)} />
-            <Stat label="L5" value={one(card.l5)} />
-            <Stat label="L15" value={one(card.l15)} />
+            <Stat label="L5" value={one(card.l5)} tone={scoreColor(card.l5)} />
+            <Stat label="L15" value={one(card.l15)} tone={scoreColor(card.l15)} />
           </div>
 
           <div>
