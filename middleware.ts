@@ -22,7 +22,8 @@ export default function middleware(req: Request) {
   // Vercel Cron authenticates with `Bearer <CRON_SECRET>`, which this Basic
   // Auth gate would reject — the route checks that secret itself, so let it
   // through rather than silently breaking the daily sync.
-  if (new URL(req.url).pathname === "/api/cron") return next();
+  const path = new URL(req.url).pathname;
+  if (path === "/api/cron" || path === "/api/cron/alerts") return next();
 
   const expected = process.env.APP_PASSWORD;
   if (!expected) {

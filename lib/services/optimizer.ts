@@ -21,7 +21,10 @@ export interface Candidate {
 }
 
 export interface Rules {
+  /** Internal key, also what /api/optimise expects back — never shown to a user. */
   name: string;
+  /** What a manager actually reads in the competition picker. */
+  displayName: string;
   size: number;
   rarities: string[];
   positionsMin: Record<string, number>;

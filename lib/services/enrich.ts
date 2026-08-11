@@ -41,12 +41,19 @@ type ApiPlayer = {
   slug: string;
   displayName: string | null;
   age: number | null;
+  birthDate: string | null;
   shirtNumber: number | null;
   anyPositions: string[] | null;
   avatarPictureUrl: string | null;
   squaredPictureUrl: string | null;
   country: { code: string | null } | null;
-  activeClub: { slug: string; name: string; pictureUrl: string | null; country: { code: string | null } | null } | null;
+  activeClub: {
+    slug: string;
+    name: string;
+    pictureUrl: string | null;
+    country: { code: string | null } | null;
+    domesticLeague: { slug: string; displayName: string } | null;
+  } | null;
   activeInjuries: { status: string | null; expectedEndDate: string | null }[] | null;
   activeSuspensions: { reason: string | null; endDate: string | null }[] | null;
   nextClassicFixtureProjectedScore: number | null;
@@ -59,7 +66,7 @@ type ApiPlayer = {
   rawPlayerGameScores: (number | null)[] | null;
 };
 
-function parseDate(v: unknown): Date | null {
+export function parseDate(v: unknown): Date | null {
   if (!v) return null;
   const d = new Date(String(v));
   return Number.isNaN(d.getTime()) ? null : d;
@@ -129,15 +136,19 @@ async function enrichPlayers(slugs: string[]): Promise<void> {
 
   if (clubs.size) {
     const values = [...clubs.values()].map(
-      (c) => Prisma.sql`(${c.slug}, ${c.name ?? c.slug}, ${c.country?.code ?? null}, ${c.pictureUrl ?? null})`
+      (c) =>
+        Prisma.sql`(${c.slug}, ${c.name ?? c.slug}, ${c.country?.code ?? null}, ${c.pictureUrl ?? null},
+          ${c.domesticLeague?.slug ?? null}, ${c.domesticLeague?.displayName ?? null})`
     );
     await prisma.$executeRaw`
-      INSERT INTO "Club" ("slug", "name", "country", "pictureUrl")
+      INSERT INTO "Club" ("slug", "name", "country", "pictureUrl", "competitionSlug", "competitionName")
       VALUES ${Prisma.join(values)}
       ON CONFLICT ("slug") DO UPDATE SET
-        "name"       = EXCLUDED."name",
-        "country"    = EXCLUDED."country",
-        "pictureUrl" = EXCLUDED."pictureUrl"
+        "name"            = EXCLUDED."name",
+        "country"         = EXCLUDED."country",
+        "pictureUrl"      = EXCLUDED."pictureUrl",
+        "competitionSlug" = EXCLUDED."competitionSlug",
+        "competitionName" = EXCLUDED."competitionName"
     `;
   }
 
@@ -151,7 +162,7 @@ async function enrichPlayers(slugs: string[]): Promise<void> {
     const scores = (p.rawPlayerGameScores ?? []).filter((s): s is number => typeof s === "number");
 
     return Prisma.sql`(${p.slug}, ${p.displayName ?? p.slug}, ${p.anyPositions?.[0] ?? "Midfielder"},
-      ${p.age ?? null}, ${p.shirtNumber ?? null},
+      ${p.age ?? null}, ${parseDate(p.birthDate)}, ${p.shirtNumber ?? null},
       ${p.squaredPictureUrl ?? p.avatarPictureUrl ?? null}, ${p.country?.code ?? null},
       ${p.activeClub?.slug ?? null}, ${injury?.status ?? null}, ${parseDate(injury?.expectedEndDate)},
       ${Boolean(suspension)}, ${p.nextClassicFixtureProjectedScore ?? null},
@@ -161,7 +172,7 @@ async function enrichPlayers(slugs: string[]): Promise<void> {
   });
 
   await prisma.$executeRaw`
-    INSERT INTO "Player" ("slug", "displayName", "position", "age", "shirtNumber",
+    INSERT INTO "Player" ("slug", "displayName", "position", "age", "birthDate", "shirtNumber",
                           "pictureUrl", "country", "clubSlug", "injuryStatus", "injuryUntil",
                           "suspended", "sorareProjection", "recentScores", "app5", "app15",
                           "seasonAppearances", "avgL5", "avgL15", "avgL10Played",
@@ -171,6 +182,7 @@ async function enrichPlayers(slugs: string[]): Promise<void> {
       "displayName"       = EXCLUDED."displayName",
       "position"          = EXCLUDED."position",
       "age"               = EXCLUDED."age",
+      "birthDate"         = EXCLUDED."birthDate",
       "shirtNumber"       = EXCLUDED."shirtNumber",
       "pictureUrl"        = EXCLUDED."pictureUrl",
       "country"           = EXCLUDED."country",

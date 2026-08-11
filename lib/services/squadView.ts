@@ -4,7 +4,7 @@ import type { SquadCard } from "../types";
 export type { SquadCard };
 
 
-function parseScores(raw: string | null): number[] {
+export function parseScores(raw: string | null): number[] {
   if (!raw) return [];
   try {
     const v = JSON.parse(raw);
@@ -37,18 +37,28 @@ export async function getSquadView(
 ): Promise<{ fixture: string | null; cards: SquadCard[] }> {
   const resolvedFixture = fixture ?? (await currentFixture());
 
-  const [cards, players, clubs, projections, overrides] = await Promise.all([
+  const [cards, players, clubs, projections, overrides, lastAppearances] = await Promise.all([
     prisma.card.findMany(rarity ? { where: { rarity } } : undefined),
     prisma.player.findMany(),
     prisma.club.findMany(),
     resolvedFixture ? prisma.projection.findMany({ where: { fixtureSlug: resolvedFixture } }) : Promise.resolve([]),
     resolvedFixture ? prisma.override.findMany({ where: { fixtureSlug: resolvedFixture } }) : Promise.resolve([]),
+    // Most recent *dated* appearance per player. This is what tells the
+    // Sparkline whether "recent" scores are actually recent — recentScores
+    // itself is just the last few played games with no dates attached, so a
+    // player who played twice months ago and nothing since would otherwise
+    // read as being in current form.
+    prisma.appearance.groupBy({
+      by: ["playerSlug"],
+      _max: { gameDate: true },
+    }),
   ]);
 
   const playerMap = new Map(players.map((p) => [p.slug, p]));
   const clubMap = new Map(clubs.map((c) => [c.slug, c]));
   const projMap = new Map(projections.map((p) => [p.playerSlug, p]));
   const overrideMap = new Map(overrides.map((o) => [o.playerSlug, o]));
+  const lastPlayedMap = new Map(lastAppearances.map((a) => [a.playerSlug, a._max.gameDate ?? null]));
 
   const out: SquadCard[] = cards
     .map((c) => {
@@ -84,9 +94,13 @@ export async function getSquadView(
         picture: p.pictureUrl,
         country: p.country,
         age: p.age,
+        birthDate: p.birthDate?.toISOString() ?? null,
         shirtNumber: p.shirtNumber,
         sorareProjection: p.sorareProjection,
         recentScores: parseScores(p.recentScores),
+        lastPlayedAt: lastPlayedMap.get(p.slug)?.toISOString() ?? null,
+        competitionSlug: club?.competitionSlug ?? null,
+        competitionName: club?.competitionName ?? null,
         l10: c.l10,
         price: c.price,
         floorPrice: c.floorPrice,

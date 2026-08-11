@@ -73,12 +73,13 @@ query PlayersBySlug($slugs: [String!]!) {
     slug
     displayName
     age
+    birthDate
     shirtNumber
     anyPositions
     avatarPictureUrl
     squaredPictureUrl
     country { code }
-    activeClub { ... on Club { slug name pictureUrl country { code } } }
+    activeClub { ... on Club { slug name pictureUrl country { code } domesticLeague { slug displayName } } }
     activeInjuries { status expectedEndDate }
     activeSuspensions { reason endDate }
     nextClassicFixtureProjectedScore

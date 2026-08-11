@@ -13,6 +13,11 @@ model Club {
   country    String?
   pictureUrl String?
   players    Player[]
+
+  /// The club's domestic league, from the public API's `Club.domesticLeague`.
+  /// Powers the division/championship badge on a player's card.
+  competitionSlug String?
+  competitionName String?
 }
 
 model Player {
@@ -26,6 +31,10 @@ model Player {
   injuryUntil  DateTime?
   suspended    Boolean   @default(false)
   updatedAt    DateTime  @updatedAt
+  /// From the public API's `Player.birthDate`. Powers the U23 badge — a
+  /// player is U23-eligible while under 23 years old, so their "eligible
+  /// until" date is exactly their 23rd birthday.
+  birthDate    DateTime?
 
   // Filled by the public (unauthenticated) Sorare API — see lib/sorare/publicClient.ts.
   pictureUrl       String?
@@ -194,13 +203,82 @@ model TokenCache {
   expiresAt DateTime
 }
 
-model WatchlistItem {
+/// Live market floor, captured periodically for players actually owned or
+/// watchlisted — not the whole market — so a price move can be detected
+/// against the *previous* capture instead of only ever seeing "now".
+model PriceSnapshot {
   id         Int      @id @default(autoincrement())
-  playerSlug String   @unique
+  playerSlug String
+  rarity     String
+  floorPrice Float
+  capturedAt DateTime @default(now())
+
+  @@index([playerSlug, rarity, capturedAt])
+}
+
+/// A CSV-sourced card that vanished from a later gallery export — sold or
+/// transferred away, the CSV can't tell us which. Captured right before the
+/// deletion csvImport.ts already did, so nothing is lost, just recorded.
+model Sale {
+  id           Int      @id @default(autoincrement())
+  cardSlug     String   @unique
+  playerSlug   String
+  playerName   String
+  rarity       String
+  season       Int?
+  serialNumber Int?
+  /// What the export said this exact card was bought for, if known.
+  boughtPrice  Float?
+  /// Best-effort only: the CSV's last "Price" column before the card
+  /// disappeared — SorareScore's own valuation, not a confirmed sale
+  /// receipt. The export has no field for what a card actually sold for, so
+  /// this is a stand-in the UI must label as an estimate, never a fact.
+  lastKnownPrice     Float?
+  lastFloorPrice     Float?
+  lastEstimatedPrice Float?
+  detectedAt         DateTime @default(now())
+
+  @@index([playerSlug])
+}
+
+/// A standing signal worth a badge on the player's card: a live price swing,
+/// or a transfer-flavoured headline. One row per (player, kind) — re-running
+/// the check simply overwrites `detail`/`createdAt`, and the row is deleted
+/// once the condition no longer holds, so its mere presence means "still true".
+model PlayerAlert {
+  id         Int      @id @default(autoincrement())
+  playerSlug String
+  /// "price_up" | "price_down" | "transfer_rumor"
+  kind       String
+  detail     String?
+  createdAt  DateTime @default(now())
+
+  @@unique([playerSlug, kind])
+}
+
+/// A named watchlist a player can be added to — e.g. "Cibles Ligue 1",
+/// "Bons plans", one per scouting strategy rather than a single flat list.
+model WatchlistGroup {
+  id        Int             @id @default(autoincrement())
+  name      String
+  createdAt DateTime        @default(now())
+  items     WatchlistItem[]
+}
+
+model WatchlistItem {
+  id         Int             @id @default(autoincrement())
+  playerSlug String
   label      String
   position   String?
   club       String?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime        @default(now())
+  groupId    Int
+  group      WatchlistGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  /// A player can only appear once per list, but the same player can sit on
+  /// several lists (e.g. tracked for two different strategies).
+  @@unique([playerSlug, groupId])
+  @@index([groupId])
 }
 
 /// Caches the mapping from our own club/player slugs to API-Football's ids,

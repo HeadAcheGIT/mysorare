@@ -103,7 +103,30 @@ export async function importGalleryCsv(text: string): Promise<ImportResult> {
   await upsertCards([...cardRows.values()], now);
 
   // The export is the full gallery, so any CSV-sourced card missing from it has
-  // been sold or transferred. API-sourced cards are left alone.
+  // been sold or transferred. API-sourced cards are left alone. Captured as a
+  // Sale before deletion so the history survives — see lib/services/sales.ts.
+  const vanished = await prisma.card.findMany({
+    where: { source: "csv", slug: { notIn: [...cardRows.keys()] } },
+    include: { player: { select: { displayName: true } } },
+  });
+  if (vanished.length) {
+    await prisma.sale.createMany({
+      data: vanished.map((c) => ({
+        cardSlug: c.slug,
+        playerSlug: c.playerSlug,
+        playerName: c.player.displayName,
+        rarity: c.rarity,
+        season: c.season,
+        serialNumber: c.serialNumber,
+        boughtPrice: c.boughtPrice,
+        lastKnownPrice: c.price,
+        lastFloorPrice: c.floorPrice,
+        lastEstimatedPrice: c.estimatedPrice,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
   const removed = await prisma.card.deleteMany({
     where: { source: "csv", slug: { notIn: [...cardRows.keys()] } },
   });

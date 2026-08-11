@@ -13,12 +13,21 @@ export interface GameEntry {
   date: string;
   status: string;
   competition: string | null;
+  /// Heuristic only: the public API has no structured "is this a friendly"
+  /// flag, so this is a text match on the competition name.
+  friendly: boolean;
   homeTeam: { name: string; picture: string | null } | null;
   awayTeam: { name: string; picture: string | null } | null;
   homeScore: number | null;
   awayScore: number | null;
   /// So5 score for this player in this game — only present for past games.
   so5Score: number | null;
+  /// The closest thing the public API exposes to an "AA" score — Sorare's own
+  /// all-round rating for the game, distinct from the fantasy So5 score.
+  allAroundScore: number | null;
+  minutesPlayed: number | null;
+  goals: number | null;
+  assists: number | null;
 }
 
 export interface PlayerDetail {
@@ -53,7 +62,13 @@ query PlayerDetail($slug: String!) {
         competition { displayName }
         homeTeam { ... on Club { name pictureUrl } ... on NationalTeam { name pictureUrl } }
         awayTeam { ... on Club { name pictureUrl } ... on NationalTeam { name pictureUrl } }
-        playerGameScore(playerSlug: $slug) { score }
+        playerGameScore(playerSlug: $slug) {
+          score
+          ... on PlayerGameScore { allAroundScore }
+          anyPlayerGameStats {
+            ... on PlayerGameStats { minsPlayed goals goalAssist }
+          }
+        }
       }
     }
     futureGames: anyFutureGames(first: 5) {
@@ -73,6 +88,12 @@ function team(t: { name: string; pictureUrl: string | null } | null): GameEntry[
   return t ? { name: t.name, picture: t.pictureUrl } : null;
 }
 
+/// No structured "friendly" flag exists on the public schema (CompetitionType
+/// is only CLUB/INTERNATIONAL) — this is a best-effort text match.
+export function isFriendly(competition: string | null): boolean {
+  return /friendl|amical/i.test(competition ?? "");
+}
+
 export async function getPlayerDetail(slug: string): Promise<PlayerDetail | null> {
   const data = await publicGraphql<{ anyPlayer: any }>(QUERY, { slug });
   const p = data.anyPlayer;
@@ -88,31 +109,44 @@ export async function getPlayerDetail(slug: string): Promise<PlayerDetail | null
     picture: p.squaredPictureUrl ?? null,
     club: p.activeClub ? { name: p.activeClub.name, picture: p.activeClub.pictureUrl } : null,
     injury: injury?.status ?? null,
-    pastGames: (p.pastGames?.nodes ?? []).map(
-      (g: any): GameEntry => ({
+    pastGames: (p.pastGames?.nodes ?? []).map((g: any): GameEntry => {
+      const competition = g.competition?.displayName ?? null;
+      const stats = g.playerGameScore?.anyPlayerGameStats;
+      return {
         id: g.id,
         date: g.date,
         status: g.statusTyped,
-        competition: g.competition?.displayName ?? null,
+        competition,
+        friendly: isFriendly(competition),
         homeTeam: team(g.homeTeam),
         awayTeam: team(g.awayTeam),
         homeScore: g.homeScore ?? null,
         awayScore: g.awayScore ?? null,
         so5Score: g.playerGameScore?.score ?? null,
-      })
-    ),
-    futureGames: (p.futureGames?.nodes ?? []).map(
-      (g: any): GameEntry => ({
+        allAroundScore: g.playerGameScore?.allAroundScore ?? null,
+        minutesPlayed: stats?.minsPlayed ?? null,
+        goals: stats?.goals ?? null,
+        assists: stats?.goalAssist ?? null,
+      };
+    }),
+    futureGames: (p.futureGames?.nodes ?? []).map((g: any): GameEntry => {
+      const competition = g.competition?.displayName ?? null;
+      return {
         id: g.id,
         date: g.date,
         status: g.statusTyped,
-        competition: g.competition?.displayName ?? null,
+        competition,
+        friendly: isFriendly(competition),
         homeTeam: team(g.homeTeam),
         awayTeam: team(g.awayTeam),
         homeScore: null,
         awayScore: null,
         so5Score: null,
-      })
-    ),
+        allAroundScore: null,
+        minutesPlayed: null,
+        goals: null,
+        assists: null,
+      };
+    }),
   };
 }

@@ -14,6 +14,7 @@ import type { Rules } from "./optimizer";
 export const COMPETITIONS: Record<string, Rules> = {
   "cap-limited": {
     name: "cap-limited",
+    displayName: "Limited (plafonné L15)",
     size: 5,
     rarities: ["limited"],
     positionsMin: { Goalkeeper: 1, Defender: 1, Midfielder: 1, Forward: 1 },
@@ -27,6 +28,7 @@ export const COMPETITIONS: Record<string, Rules> = {
   },
   "champion-limited": {
     name: "champion-limited",
+    displayName: "Champion Limited",
     size: 5,
     rarities: ["limited"],
     positionsMin: { Goalkeeper: 1, Defender: 1, Midfielder: 1, Forward: 1 },
@@ -40,6 +42,7 @@ export const COMPETITIONS: Record<string, Rules> = {
   },
   "champion-rare": {
     name: "champion-rare",
+    displayName: "Champion Rare",
     size: 5,
     rarities: ["rare"],
     positionsMin: { Goalkeeper: 1, Defender: 1, Midfielder: 1, Forward: 1 },
@@ -53,6 +56,7 @@ export const COMPETITIONS: Record<string, Rules> = {
   },
   "common-arena": {
     name: "common-arena",
+    displayName: "Common Arena",
     size: 5,
     rarities: ["common"],
     positionsMin: { Goalkeeper: 1, Defender: 1, Midfielder: 1, Forward: 1 },
