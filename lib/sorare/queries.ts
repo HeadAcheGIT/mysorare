@@ -70,40 +70,6 @@ query PlayerForm($slug: String!, $last: Int!) {
   }
 }`;
 
-/**
- * Search-by-name + live marketplace floor. Sorare's search field and the
- * exact shape of card listings drift between seasons more than most of the
- * schema — if this errors, `curl -o schema.graphql https://api.sorare.com/graphql/schema`
- * and grep for `players(` and `liveSingleSaleOffer` to fix the field names.
- */
-export const SEARCH_PLAYERS = `
-query SearchPlayers($search: String!) {
-  football {
-    players(name: $search, first: 8) {
-      slug
-      displayName
-      position
-      activeClub { ... on Club { name } }
-    }
-  }
-}`;
-
-export const PLAYER_MARKET = `
-query PlayerMarket($slug: String!) {
-  football {
-    player(slug: $slug) {
-      slug
-      displayName
-      cards(first: 15) {
-        nodes {
-          slug
-          rarityTyped
-          serialNumber
-          liveSingleSaleOffer {
-            receiverSide { amounts { eur } }
-          }
-        }
-      }
-    }
-  }
-}`;
+// Player search and the marketplace floor moved to lib/services/market.ts,
+// on the public API (lib/sorare/publicClient.ts) — see that file for why:
+// `football.player`/`football.players` no longer exist on the current schema.

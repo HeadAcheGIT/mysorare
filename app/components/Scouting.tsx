@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import { POSITION_SHORT } from "@/lib/types";
+import { formatMoney as money, relativeDate as daysAgo } from "@/lib/format";
+import MatchList from "./MatchList";
 
 type Money = { amount: number; currency: string } | null;
 
@@ -31,15 +33,6 @@ type ScoutPlayer = {
 };
 
 type League = { slug: string; name: string; country: string | null };
-
-const money = (m: Money) => (m == null ? "—" : `${m.amount.toFixed(2)} ${m.currency === "USD" ? "$" : "€"}`);
-
-function daysAgo(iso: string) {
-  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
-  if (d <= 0) return "aujourd'hui";
-  if (d === 1) return "hier";
-  return `il y a ${d} j`;
-}
 
 /** Leagues worth putting first for a French manager; the rest stay alphabetical. */
 const PINNED = ["ligue-1-fr", "premier-league-gb-eng", "laliga-es", "serie-a-it", "bundesliga-de", "ligue-2-fr"];
@@ -231,6 +224,10 @@ export default function Scouting({ onError }: { onError: (m: string) => void }) 
                       {p.floorAnySeason && ` Prix toutes saisons : ${money(p.floorAnySeason)}.`}
                     </p>
                   )}
+
+                  <div className="mt-3 pt-3 border-t border-line">
+                    <MatchList slug={p.slug} />
+                  </div>
                 </div>
               )}
             </li>

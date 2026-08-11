@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import Sparkline from "./Sparkline";
+import MatchList from "./MatchList";
 import { POSITION_LABEL, rarityOf, type SquadCard } from "@/lib/types";
 
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
@@ -125,6 +126,13 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
             {card.serial != null && ` · n° de série ${card.serial}`}
             {card.inSeason && " · in-season"}
           </p>
+
+          <div>
+            <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">Matchs</p>
+            <div className="bg-ink rounded-md px-3 py-2">
+              <MatchList slug={card.playerSlug} />
+            </div>
+          </div>
 
           <a
             href={`https://sorare.com/football/players/${card.playerSlug}`}

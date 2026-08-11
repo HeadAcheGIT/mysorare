@@ -632,27 +632,50 @@ export default function Page() {
 
             {marketResults.length > 0 && (
               <ul className="flex flex-col gap-2 mb-6">
-                {marketResults.map((p) => (
-                  <li
-                    key={p.slug}
-                    className="p-3 rounded-lg bg-ink2 border border-line flex items-center justify-between gap-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-bold truncate">{p.name}</p>
-                      <p className="text-xs text-muted truncate">
-                        {POSITION_SHORT[p.position] ?? p.position} · {p.club ?? "—"}
-                      </p>
-                    </div>
-                    {!watchlist.some((w) => w.playerSlug === p.slug) && (
-                      <button
-                        onClick={() => addToWatchlist(p)}
-                        className="shrink-0 text-xs bg-flood text-ink font-bold rounded-md px-2 py-1.5"
-                      >
-                        + Suivre
-                      </button>
-                    )}
-                  </li>
-                ))}
+                {marketResults.map((p) => {
+                  const price = prices[p.slug];
+                  return (
+                    <li key={p.slug} className="p-3 rounded-lg bg-ink2 border border-line">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-bold truncate">{p.name}</p>
+                          <p className="text-xs text-muted truncate">
+                            {POSITION_SHORT[p.position] ?? p.position} · {p.club ?? "—"}
+                          </p>
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <button
+                            onClick={() => checkPrice(p.slug)}
+                            className="text-xs border border-line rounded-md px-2 py-1.5"
+                          >
+                            {price === "loading" ? "…" : "Prix"}
+                          </button>
+                          {!watchlist.some((w) => w.playerSlug === p.slug) && (
+                            <button
+                              onClick={() => addToWatchlist(p)}
+                              className="text-xs bg-flood text-ink font-bold rounded-md px-2 py-1.5"
+                            >
+                              + Suivre
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {price && price !== "loading" && price !== "error" && (
+                        <div className="mt-2 font-mono text-xs text-muted flex flex-wrap gap-x-4 gap-y-1">
+                          {Object.entries(price.floorByRarity)
+                            .filter(([, v]) => v != null)
+                            .map(([r, v]) => (
+                              <span key={r}>
+                                {r}: {v} €
+                              </span>
+                            ))}
+                          {price.listedCount === 0 && <span>Aucune carte en vente actuellement</span>}
+                        </div>
+                      )}
+                      {price === "error" && <p className="mt-2 text-xs text-warn">Erreur de lecture du marché</p>}
+                    </li>
+                  );
+                })}
               </ul>
             )}
 
