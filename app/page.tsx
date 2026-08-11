@@ -11,6 +11,7 @@ import CsvImport from "./components/CsvImport";
 import SorareLogin from "./components/SorareLogin";
 import Deadline, { type GameWeek } from "./components/Deadline";
 import InsightList, { type InsightGroup } from "./components/InsightList";
+import DataHealth from "./components/DataHealth";
 
 type OptimiseResult = {
   fixture: string | null;
@@ -48,6 +49,7 @@ export default function Page() {
   const [tab, setTab] = useState<"week" | "gallery" | "lineup" | "market" | "settings">("week");
   const [gameWeek, setGameWeek] = useState<GameWeek | null>(null);
   const [insights, setInsights] = useState<InsightGroup[]>([]);
+  const [unenriched, setUnenriched] = useState(0);
   const [insightsLoading, setInsightsLoading] = useState(true);
   const [fixture, setFixture] = useState<string | null>(null);
   const [squad, setSquad] = useState<SquadCard[]>([]);
@@ -146,8 +148,9 @@ export default function Page() {
 
   const loadInsights = useCallback(async () => {
     try {
-      const data = await apiFetch<{ groups: InsightGroup[] }>("/api/insights");
+      const data = await apiFetch<{ groups: InsightGroup[]; unenriched: number }>("/api/insights");
       setInsights(data.groups);
+      setUnenriched(data.unenriched ?? 0);
     } catch (err) {
       setError(msg(err));
     } finally {
@@ -264,20 +267,15 @@ export default function Page() {
     setSyncing(true);
     setNotice("");
     try {
-      let cursor = 0;
+      let guard = 0;
       for (;;) {
-        const batch = await apiFetch<{ processed: number; nextCursor: number | null; total: number }>(
+        const batch = await apiFetch<{ processed: number; remaining: number; total: number }>(
           "/api/enrich",
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ cursor }),
-          }
+          { method: "POST" }
         );
-        cursor += batch.processed;
-        setNotice(`${cursor}/${batch.total} joueurs`);
-        if (batch.nextCursor === null) break;
-        cursor = batch.nextCursor;
+        setNotice(`${batch.total - batch.remaining}/${batch.total} joueurs`);
+        if (batch.remaining === 0 || batch.processed === 0) break;
+        if (++guard > 60) break;
       }
 
       setNotice("Calcul des projections…");
@@ -405,6 +403,7 @@ export default function Page() {
         {tab === "week" && (
           <section aria-label="Cette semaine" className="space-y-4">
             {gameWeek && <Deadline gw={gameWeek} />}
+            <DataHealth unenriched={unenriched} onDone={refreshAll} />
 
             {squad.length === 0 ? (
               <div className="space-y-4">

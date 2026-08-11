@@ -58,20 +58,16 @@ export default function CsvImport({ onDone }: { onDone: () => void }) {
       setResult(imported);
 
       setPhase("enriching");
-      let cursor = 0;
+      let guard = 0;
       for (;;) {
-        const batch = await apiFetch<{ processed: number; nextCursor: number | null; total: number }>(
+        const batch = await apiFetch<{ processed: number; remaining: number; total: number }>(
           "/api/enrich",
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ cursor }),
-          }
+          { method: "POST" }
         );
-        cursor += batch.processed;
-        setProgress({ done: cursor, total: batch.total });
-        if (batch.nextCursor === null) break;
-        cursor = batch.nextCursor;
+        setProgress({ done: batch.total - batch.remaining, total: batch.total });
+        // processed === 0 means nothing was due — stop rather than spin.
+        if (batch.remaining === 0 || batch.processed === 0) break;
+        if (++guard > 60) break;
       }
 
       setPhase("projecting");

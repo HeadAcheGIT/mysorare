@@ -7,21 +7,35 @@ import { publicGraphql, PLAYERS_BY_SLUG, PLAYERS_PER_QUERY } from "../sorare/pub
  * suspensions, recent So5 scores and Sorare's own projection — all from the
  * public API, no login and therefore no 2FA.
  *
- * Batched by cursor like the other syncs so a 400-player gallery fits inside
- * serverless time limits across several calls.
+ * Work is selected by staleness, not by a cursor: each call takes the players
+ * that have never been enriched first, then the least recently enriched. That
+ * makes an interrupted run self-healing — whatever was missed is simply what
+ * the next call picks up — where a cursor would silently leave holes, and a
+ * player with no data looks identical to a player with no club.
  */
 
 /**
- * Players handled per HTTP call to this app. Several GraphQL queries are run
- * inside one invocation on purpose: the unauthenticated rate limit is 20
- * calls/minute, and the client's pacing only takes effect *within* an
- * invocation — one query per invocation would let the browser loop outrun the
- * limit and spend its time on 429 retries instead.
+ * Players handled per HTTP call to this app. Several GraphQL queries run inside
+ * one invocation on purpose: the unauthenticated limit is 20 calls/minute, and
+ * pacing only applies within an invocation, so one query per request would let
+ * the browser loop outrun the limit and spend its time on 429 retries.
  */
 export const ENRICH_BATCH_SIZE = PLAYERS_PER_QUERY * 3;
 
 /** Leaves room under the route's 60s maxDuration for the final DB writes. */
-const TIME_BUDGET_MS = 40_000;
+const TIME_BUDGET_MS = 35_000;
+
+/** Re-enrich anything older than this so injuries and form don't go stale. */
+const STALE_AFTER_MS = 12 * 60 * 60 * 1000;
+
+export type EnrichProgress = {
+  processed: number;
+  /** Players still lacking fresh data after this call. Zero means done. */
+  remaining: number;
+  total: number;
+  /** Players that have never been enriched at all — the ones that break insights. */
+  neverEnriched: number;
+};
 
 type ApiPlayer = {
   slug: string;
@@ -51,30 +65,51 @@ function parseDate(v: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export async function enrichBatch(
-  cursor: number
-): Promise<{ processed: number; nextCursor: number | null; total: number }> {
-  const players = await prisma.player.findMany({ select: { slug: true }, orderBy: { slug: "asc" } });
-  const slice = players.slice(cursor, cursor + ENRICH_BATCH_SIZE);
-  if (!slice.length) return { processed: 0, nextCursor: null, total: players.length };
+export async function enrichBatch(): Promise<EnrichProgress> {
+  const staleBefore = new Date(Date.now() - STALE_AFTER_MS);
+
+  const [total, neverEnrichedBefore, due] = await Promise.all([
+    prisma.player.count(),
+    prisma.player.count({ where: { enrichedAt: null } }),
+    prisma.player.findMany({
+      where: { OR: [{ enrichedAt: null }, { enrichedAt: { lt: staleBefore } }] },
+      select: { slug: true },
+      // Nulls first: a player with no data at all is the one actively producing
+      // wrong advice, so it gets refreshed before one that's merely stale.
+      orderBy: [{ enrichedAt: { sort: "asc", nulls: "first" } }, { slug: "asc" }],
+      take: ENRICH_BATCH_SIZE,
+    }),
+  ]);
+
+  if (!due.length) {
+    if (neverEnrichedBefore === 0 && total > 0) {
+      await prisma.syncLog.create({
+        data: { job: "enrich", status: "ok", detail: `${total} joueurs à jour` },
+      });
+    }
+    return { processed: 0, remaining: 0, total, neverEnriched: neverEnrichedBefore };
+  }
 
   const started = Date.now();
   let processed = 0;
-
-  for (let i = 0; i < slice.length; i += PLAYERS_PER_QUERY) {
+  for (let i = 0; i < due.length; i += PLAYERS_PER_QUERY) {
     if (i > 0 && Date.now() - started > TIME_BUDGET_MS) break;
-    const page = slice.slice(i, i + PLAYERS_PER_QUERY);
+    const page = due.slice(i, i + PLAYERS_PER_QUERY);
     await enrichPlayers(page.map((p) => p.slug));
     processed += page.length;
   }
 
-  const nextCursor = cursor + processed < players.length ? cursor + processed : null;
-  if (nextCursor === null) {
+  const [remaining, neverEnriched] = await Promise.all([
+    prisma.player.count({ where: { OR: [{ enrichedAt: null }, { enrichedAt: { lt: staleBefore } }] } }),
+    prisma.player.count({ where: { enrichedAt: null } }),
+  ]);
+
+  if (remaining === 0) {
     await prisma.syncLog.create({
-      data: { job: "enrich", status: "ok", detail: `${players.length} joueurs enrichis` },
+      data: { job: "enrich", status: "ok", detail: `${total} joueurs enrichis` },
     });
   }
-  return { processed, nextCursor, total: players.length };
+  return { processed, remaining, total, neverEnriched };
 }
 
 /** Fetches one query's worth of players and writes them in two statements. */

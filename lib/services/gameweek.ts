@@ -59,7 +59,16 @@ export async function syncFixtures(): Promise<string | null> {
  * local maths — no network — so it's cheap to re-run after any import.
  */
 export async function recomputeFromPublic(fixtureSlug: string): Promise<number> {
-  const [players, cards] = await Promise.all([prisma.player.findMany(), prisma.card.findMany()]);
+  // Only players whose public data has actually been fetched. Projecting an
+  // un-enriched player would read its empty club and zero appearances as fact
+  // and score it 0 with a "sans club" note — wrong, and indistinguishable from
+  // a real assessment. No projection at all is the honest answer, and the UI
+  // falls back to Sorare's own number or the CSV average.
+  const [players, cards] = await Promise.all([
+    prisma.player.findMany({ where: { enrichedAt: { not: null } } }),
+    prisma.card.findMany(),
+  ]);
+  if (!players.length) return 0;
 
   // Best bonus among the cards owned for that player, so the projection
   // reflects the card you'd actually field.

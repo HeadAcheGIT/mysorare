@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { config } from "@/lib/config";
 import { enrichBatch } from "@/lib/services/enrich";
 import { syncFixtures, recomputeFromPublic } from "@/lib/services/gameweek";
-import { prisma } from "@/lib/prisma";
 import { ApiError, withErrorHandling } from "@/lib/apiHandler";
 
 export const dynamic = "force-dynamic";
@@ -36,27 +35,18 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
   const budgetMs = 40_000; // headroom under maxDuration for the final writes
   const fixture = await syncFixtures();
 
-  // Resume from wherever yesterday's run ran out of time.
-  const state = await prisma.syncLog.findFirst({
-    where: { job: "cron_cursor" },
-    orderBy: { ranAt: "desc" },
-  });
-  let cursor = Number(state?.detail ?? 0) || 0;
-
+  // No cursor to carry between runs: enrichBatch always picks the players with
+  // the oldest (or missing) data, so consecutive runs converge on their own.
   let processed = 0;
-  let done = false;
+  let remaining = 0;
+  let neverEnriched = 0;
   while (Date.now() - started < budgetMs) {
-    const res = await enrichBatch(cursor);
+    const res = await enrichBatch();
     processed += res.processed;
-    if (res.nextCursor === null) {
-      cursor = 0;
-      done = true;
-      break;
-    }
-    cursor = res.nextCursor;
+    remaining = res.remaining;
+    neverEnriched = res.neverEnriched;
+    if (res.remaining === 0 || res.processed === 0) break;
   }
-
-  await prisma.syncLog.create({ data: { job: "cron_cursor", status: "ok", detail: String(cursor) } });
 
   const updated = fixture ? await recomputeFromPublic(fixture) : 0;
 
@@ -64,8 +54,8 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
     status: "ok",
     fixture,
     playersEnriched: processed,
-    completedFullPass: done,
-    resumeCursor: cursor,
+    stillStale: remaining,
+    neverEnriched,
     projections: updated,
   });
 });

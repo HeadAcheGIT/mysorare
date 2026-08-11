@@ -56,7 +56,9 @@ function trend(scores: number[]): number | null {
   return recent - older;
 }
 
-export async function buildInsights(fixtureSlug: string | null): Promise<InsightGroup[]> {
+export async function buildInsights(
+  fixtureSlug: string | null
+): Promise<{ groups: InsightGroup[]; unenriched: number }> {
   const [cards, players, clubs, projections] = await Promise.all([
     prisma.card.findMany(),
     prisma.player.findMany(),
@@ -75,9 +77,22 @@ export async function buildInsights(fixtureSlug: string | null): Promise<Insight
   const unavailable: Insight[] = [];
   const rising: Insight[] = [];
 
+  let unenriched = 0;
+
   for (const c of cards) {
     const p = playerMap.get(c.playerSlug);
     if (!p) continue;
+
+    // A player we've never fetched has no club, no photo and no appearance
+    // counts — which is indistinguishable from a player who genuinely has no
+    // club and never plays. Judging them would produce confident nonsense
+    // (a Premier League starter listed as "sans club"), so they're counted and
+    // skipped until enrichment has actually run.
+    if (!p.enrichedAt) {
+      unenriched++;
+      continue;
+    }
+
     const proj = projMap.get(p.slug);
     const club = p.clubSlug ? clubMap.get(p.clubSlug) : null;
 
@@ -216,7 +231,7 @@ export async function buildInsights(fixtureSlug: string | null): Promise<Insight
     },
   ];
 
-  return groups.filter((g) => g.items.length > 0);
+  return { groups: groups.filter((g) => g.items.length > 0), unenriched };
 }
 
 /** Portfolio totals for the dashboard header. */
