@@ -1,6 +1,9 @@
 "use client";
 
-export type SortKey = "score" | "name" | "price" | "form" | "titu";
+import SortControl, { type SortDirection } from "./SortControl";
+
+export type SortKey = "score" | "name" | "price" | "form" | "titu" | "u23";
+export type { SortDirection };
 
 const POSITIONS = [
   ["", "Tous"],
@@ -16,7 +19,18 @@ const SORTS: [SortKey, string][] = [
   ["titu", "% Titu"],
   ["price", "Valeur"],
   ["name", "Nom"],
+  ["u23", "U23"],
 ];
+
+/** Sensible default direction per key, applied when the key itself changes. */
+export const DEFAULT_DIRECTION: Record<SortKey, SortDirection> = {
+  score: "desc",
+  form: "desc",
+  titu: "desc",
+  price: "desc",
+  name: "asc",
+  u23: "desc", // most time left as U23 first
+};
 
 export default function GalleryFilters({
   search,
@@ -27,6 +41,8 @@ export default function GalleryFilters({
   onRarity,
   sort,
   onSort,
+  direction,
+  onDirection,
   inSeasonOnly,
   onInSeasonOnly,
 }: {
@@ -38,6 +54,8 @@ export default function GalleryFilters({
   onRarity: (v: string) => void;
   sort: SortKey;
   onSort: (v: SortKey) => void;
+  direction: SortDirection;
+  onDirection: (d: SortDirection) => void;
   inSeasonOnly: boolean;
   onInSeasonOnly: (v: boolean) => void;
 }) {
@@ -81,18 +99,18 @@ export default function GalleryFilters({
           <option value="unique">Unique</option>
         </select>
 
-        <select
-          value={sort}
-          onChange={(e) => onSort(e.target.value as SortKey)}
-          aria-label="Trier"
-          className="flex-1 bg-ink border border-line rounded-md px-2 py-1.5 text-xs"
-        >
-          {SORTS.map(([v, label]) => (
-            <option key={v} value={v}>
-              Tri : {label}
-            </option>
-          ))}
-        </select>
+        <div className="flex-1">
+          <SortControl
+            sortKey={sort}
+            onSortKey={(k) => {
+              onSort(k);
+              onDirection(DEFAULT_DIRECTION[k]);
+            }}
+            options={SORTS}
+            direction={direction}
+            onDirection={onDirection}
+          />
+        </div>
 
         <button
           onClick={() => onInSeasonOnly(!inSeasonOnly)}

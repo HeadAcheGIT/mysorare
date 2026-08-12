@@ -97,7 +97,7 @@ query SoldOffers($first: Int, $after: String) {
           }
         }
         receiverSide {
-          amounts { eurCents usdCents referenceCurrency }
+          amounts { eurCents usdCents referenceCurrency wei }
         }
       }
       pageInfo { hasNextPage endCursor }
@@ -126,7 +126,7 @@ query BoughtOffers($first: Int, $after: String) {
           anyCards { slug }
         }
         receiverSide {
-          amounts { eurCents usdCents referenceCurrency }
+          amounts { eurCents usdCents referenceCurrency wei }
         }
       }
       pageInfo { hasNextPage endCursor }

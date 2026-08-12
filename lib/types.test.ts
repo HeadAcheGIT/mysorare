@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scoreColor, SCORE_COLOR_CLASS, u23Status, rarityOf, RARITY_CLASS } from "./types";
+import { scoreColor, SCORE_COLOR_CLASS, u23Status, u23SortValue, compareNullable, rarityOf, RARITY_CLASS } from "./types";
 
 describe("scoreColor", () => {
   it("is neutral for null/undefined", () => {
@@ -59,6 +59,61 @@ describe("u23Status", () => {
     expect(status?.validUntil.getUTCFullYear()).toBe(2026);
     expect(status?.validUntil.getUTCMonth()).toBe(5); // June, 0-indexed
     expect(status?.validUntil.getUTCDate()).toBe(15);
+  });
+});
+
+describe("u23SortValue", () => {
+  it("is null for a non-eligible or unknown player", () => {
+    expect(u23SortValue(null)).toBeNull();
+    const old = new Date();
+    old.setFullYear(old.getFullYear() - 30);
+    expect(u23SortValue(old.toISOString())).toBeNull();
+  });
+
+  it("is the 23rd-birthday timestamp for an eligible player", () => {
+    const dob = new Date();
+    dob.setFullYear(dob.getFullYear() - 20); // safely still U23 today
+    expect(u23SortValue(dob.toISOString())).toBe(u23Status(dob.toISOString())?.validUntil.getTime());
+  });
+
+  it("ranks a younger eligible player above an older one on descending sort (most time left first)", () => {
+    const young = new Date();
+    young.setFullYear(young.getFullYear() - 19);
+    const old = new Date();
+    old.setFullYear(old.getFullYear() - 22);
+
+    const youngValue = u23SortValue(young.toISOString())!;
+    const oldValue = u23SortValue(old.toISOString())!;
+    expect(youngValue).toBeGreaterThan(oldValue);
+  });
+});
+
+describe("compareNullable", () => {
+  it("sorts known values ascending or descending", () => {
+    expect(compareNullable(1, 2, "asc")).toBeLessThan(0);
+    expect(compareNullable(1, 2, "desc")).toBeGreaterThan(0);
+    expect(compareNullable(5, 5, "asc")).toBe(0);
+  });
+
+  it("always sends null/undefined last, regardless of direction", () => {
+    expect(compareNullable(null, 5, "asc")).toBeGreaterThan(0);
+    expect(compareNullable(null, 5, "desc")).toBeGreaterThan(0);
+    expect(compareNullable(5, null, "asc")).toBeLessThan(0);
+    expect(compareNullable(5, null, "desc")).toBeLessThan(0);
+    expect(compareNullable(undefined, 5, "asc")).toBeGreaterThan(0);
+  });
+
+  it("treats two unknowns as equal", () => {
+    expect(compareNullable(null, undefined, "asc")).toBe(0);
+    expect(compareNullable(null, null, "desc")).toBe(0);
+  });
+
+  it("sorting an array with mixed nulls keeps them all at the end", () => {
+    const xs = [3, null, 1, null, 2];
+    const sortedAsc = [...xs].sort((a, b) => compareNullable(a, b, "asc"));
+    expect(sortedAsc).toEqual([1, 2, 3, null, null]);
+    const sortedDesc = [...xs].sort((a, b) => compareNullable(a, b, "desc"));
+    expect(sortedDesc).toEqual([3, 2, 1, null, null]);
   });
 });
 

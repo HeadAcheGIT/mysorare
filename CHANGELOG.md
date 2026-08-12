@@ -3,6 +3,70 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-12 (après-midi) — Tri cohérent partout + refonte de l'onglet Historique
+
+Demande : un tri U23 en plus, un sens croissant/décroissant partout, et un
+"top UI/UX" sur les tris en général — puis, en cours de route, l'Historique
+lui-même à muscler (lien carte, récap, cohérence des montants ETH).
+
+### Un seul composant de tri pour tout le site
+
+`SortControl` (nouveau) + `compareNullable`/`u23SortValue` (`lib/types.ts`)
+remplacent les tris ad-hoc, non réversibles, qui existaient déjà. Chaque
+liste garde son propre jeu de clés et sa propre direction par défaut (ex :
+Galerie trie la Valeur en décroissant, Scouting trie le Prix en croissant —
+acheter pas cher n'est pas le même réflexe que vendre cher), mais le bouton
+↓/↑ et le `<select>` sont désormais identiques partout : Galerie, Scouting,
+Marché → Recherche par nom, Marché → Watchlist, Historique.
+
+U23 rejoint les clés de tri disponibles là où une date de naissance existe
+(Galerie, Scouting, Recherche par nom) — alimenté par `birthDate: birthDay`
+sur `players(slugs)`, `anyPlayer` et `searchPlayers.commonPlayerHits`, le
+même alias qui avait déjà réglé le bug d'enrichissement du matin. Le badge
+U23 (pastille + tooltip "éligible jusqu'au…") suit désormais le tri sur les
+trois écrans, pas seulement la Galerie où il existait déjà.
+
+La Watchlist n'a pas de date de naissance sans un appel réseau par joueur —
+tri limité à Nom/Poste/Club/Prix (le prix vient du floor déjà chargé au clic
+"Prix", nul tant qu'il n'a pas été consulté, envoyé en fin de liste).
+
+### Historique : lien carte, récap, et montants ETH cohérents
+
+- Chaque vente a désormais un lien direct `sorare.com/football/cards/{slug}`
+  vers la carte, à côté du bouton qui ouvrait déjà la fiche joueur.
+- Bloc récap en tête de liste : bons calls / mauvais calls (basé sur
+  `changePct`), plus-value ou moins-value totale sur les ventes confirmées
+  ayant un prix d'achat connu.
+- **Bug de fond corrigé** : une vente conclue en ETH sans `eurCents` renvoyé
+  par Sorare passait silencieusement à `null` — invisible dans le récap et
+  dans le total, sans que rien ne le signale. `MonetaryAmount` expose aussi
+  `wei` ; quand `eurCents` manque et qu'un montant en wei existe, le prix est
+  maintenant reconstruit via le cours EUR/ETH **du jour de la vente** (pas
+  du jour de la consultation — sinon une vieille vente comparerait un prix
+  d'aujourd'hui à un floor d'aujourd'hui, une comparaison qui ne veut rien
+  dire). Cours historique récupéré via l'API gratuite CoinGecko et mis en
+  cache par jour (`EthRate`) — un jour passé ne change plus jamais de cours,
+  inutile de le redemander à chaque ouverture de l'onglet. Ces montants
+  reconstruits sont marqués `soldPriceApprox`/`boughtPriceApprox` et affichés
+  avec un « ≈ » plutôt que présentés comme un chiffre confirmé au même titre
+  qu'un `eurCents` direct de Sorare.
+
+### Migration Prisma : un piège d'ordre de tri découvert avant qu'il touche la prod
+
+`prisma migrate deploy` trie les dossiers de migration par ordre alphabétique
+du nom de dossier, pas par numéro. Ce repo nomme ses migrations `0_init`,
+`1_...`, … `9_backfill_badges` (pas le format horodaté par défaut de Prisma).
+Un dossier `10_...` se serait retrouvé trié juste après `0_init` et avant
+`1_gallery_enrichment` — testé en local sur un Postgres jetable, l'erreur est
+tombée immédiatement (`relation "Sale" does not exist`, la table n'existant
+qu'à partir de la migration 6). Renommer les migrations existantes n'est pas
+une option : la table `_prisma_migrations` de la prod les connaît déjà sous
+leur nom actuel. Nouvelle migration nommée `a_eth_rate_and_approx_flags` à la
+place — toute lettre trie après n'importe quel chiffre, donc après toutes
+les migrations `0`–`9` existantes ; prochaines migrations à nommer `b_`,
+`c_`, etc. Réappliqué la chaîne complète (`0_init` → `a_...`) sur un Postgres
+jetable pour confirmer l'ordre correct avant tout déploiement réel.
+
 ## 2026-08-12 (matin) — Enrichissement cassé depuis hier soir : U23/division invisibles
 
 Signalé par l'utilisateur : pas de badge U23 ni de championnat sur les

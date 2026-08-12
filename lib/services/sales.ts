@@ -3,6 +3,7 @@ import { getPlayerMarket } from "./market";
 import { paginate } from "../sorare/client";
 import { SOLD_SINGLE_SALE_OFFERS, BOUGHT_SINGLE_SALE_OFFERS } from "../sorare/queries";
 import { parseCardSlug } from "./csvParse";
+import { getEthEurRate, weiToEth } from "./ethRate";
 
 /**
  * Sold/transferred cards — see the Sale model and csvImport.ts, which is
@@ -36,6 +37,11 @@ export interface SaleRow {
   /// syncSoldOffersFromSorare. Null until a sync has picked up this card.
   soldPrice: number | null;
   soldAt: string | null;
+  /// True when soldPrice came from converting a wei-denominated offer via
+  /// that day's ETH/EUR rate rather than a direct eurCents figure from
+  /// Sorare — the UI should mark it as an approximation.
+  soldPriceApprox: boolean;
+  boughtPriceApprox: boolean;
   source: string;
   detectedAt: string;
   /// Today's floor for this player/rarity, fetched live — null if nothing is
@@ -101,6 +107,8 @@ export async function listSales(limit = 100, budgetMs = 40_000): Promise<SaleRow
       lastEstimatedPrice: r.lastEstimatedPrice,
       soldPrice: r.soldPrice,
       soldAt: r.soldAt?.toISOString() ?? null,
+      soldPriceApprox: r.soldPriceApprox,
+      boughtPriceApprox: r.boughtPriceApprox,
       source: r.source,
       detectedAt: r.detectedAt.toISOString(),
       currentFloor,
@@ -114,8 +122,9 @@ export async function listSales(limit = 100, budgetMs = 40_000): Promise<SaleRow
   return out;
 }
 
+type OfferAmounts = { eurCents: number | null; usdCents: number | null; referenceCurrency: string; wei: string | null };
 type OfferAnyCard = { slug: string; anyPlayer?: { slug: string; displayName: string } };
-type OfferSide<T> = { anyCards?: T[]; amounts?: { eurCents: number | null; usdCents: number | null } | null };
+type OfferSide<T> = { anyCards?: T[]; amounts?: OfferAmounts | null };
 type SoldOfferNode = {
   transactionDate: string | null;
   endDate: string | null;
@@ -123,12 +132,36 @@ type SoldOfferNode = {
   receiverSide: OfferSide<never>;
 };
 type BoughtOfferNode = {
+  transactionDate: string | null;
+  endDate: string | null;
   senderSide: OfferSide<{ slug: string }>;
   receiverSide: OfferSide<never>;
 };
 
-function eur(amounts: { eurCents: number | null } | null | undefined): number | null {
-  return amounts?.eurCents != null ? amounts.eurCents / 100 : null;
+/**
+ * eurCents is Sorare's own record and trusted outright — it reflects what
+ * the offer was actually worth in EUR at the time it was created. The only
+ * gap is an offer priced purely in ETH with no eurCents alongside it: there,
+ * the wei amount is converted using that *day's* ETH/EUR rate (see
+ * ethRate.ts) rather than silently going without a price or, worse, pricing
+ * old sales at today's ETH rate. `approx` tells the caller which happened,
+ * so the UI can flag a converted figure instead of presenting it as exact.
+ */
+async function resolveEur(
+  amounts: OfferAmounts | null | undefined,
+  atIso: string | null
+): Promise<{ value: number | null; approx: boolean }> {
+  if (amounts?.eurCents != null) return { value: amounts.eurCents / 100, approx: false };
+
+  if (amounts?.wei && atIso) {
+    const eth = weiToEth(amounts.wei);
+    if (eth != null) {
+      const rate = await getEthEurRate(new Date(atIso));
+      if (rate != null) return { value: eth * rate, approx: true };
+    }
+  }
+
+  return { value: null, approx: false };
 }
 
 export interface SyncProgress {
@@ -158,8 +191,8 @@ export async function syncSoldOffersFromSorare(budgetMs = 45_000): Promise<SyncP
     if (!card) continue;
     const parsed = parseCardSlug(card.slug);
     if (!parsed) continue;
-    const price = eur(node.receiverSide?.amounts);
     const at = node.transactionDate ?? node.endDate;
+    const { value: price, approx } = await resolveEur(node.receiverSide?.amounts, at);
 
     await prisma.sale.upsert({
       where: { cardSlug: card.slug },
@@ -172,11 +205,12 @@ export async function syncSoldOffersFromSorare(budgetMs = 45_000): Promise<SyncP
         serialNumber: parsed.serialNumber,
         soldPrice: price,
         soldAt: at ? new Date(at) : null,
+        soldPriceApprox: approx,
         source: "sorare_sync",
       },
       // A card already recorded via csv_diff gets upgraded to the confirmed
       // number; one already sorare_sync'd just gets refreshed.
-      update: { soldPrice: price, soldAt: at ? new Date(at) : null, source: "sorare_sync" },
+      update: { soldPrice: price, soldAt: at ? new Date(at) : null, soldPriceApprox: approx, source: "sorare_sync" },
     });
     sold++;
   }
@@ -190,14 +224,15 @@ export async function syncSoldOffersFromSorare(budgetMs = 45_000): Promise<SyncP
     if (Date.now() - started > budgetMs) break;
     const card = node.senderSide?.anyCards?.[0];
     if (!card) continue;
-    const price = eur(node.receiverSide?.amounts);
+    const at = node.transactionDate ?? node.endDate;
+    const { value: price, approx } = await resolveEur(node.receiverSide?.amounts, at);
     if (price == null) continue;
 
     // Only fills a gap — never overwrites a price the CSV already carried,
     // since that one came with the manager's own record-keeping behind it.
     const { count } = await prisma.sale.updateMany({
       where: { cardSlug: card.slug, boughtPrice: null },
-      data: { boughtPrice: price },
+      data: { boughtPrice: price, boughtPriceApprox: approx },
     });
     boughtMatched += count;
   }

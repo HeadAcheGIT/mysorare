@@ -41,6 +41,7 @@ const soldOffer = (opts: {
 
 async function cleanDb() {
   await prisma.sale.deleteMany();
+  await prisma.ethRate.deleteMany();
 }
 
 describe("syncSoldOffersFromSorare", () => {
@@ -79,6 +80,59 @@ describe("syncSoldOffersFromSorare", () => {
     expect(sale?.season).toBe(2024);
     expect(sale?.serialNumber).toBe(7);
     expect(sale?.soldAt?.toISOString()).toBe("2026-05-01T12:00:00.000Z");
+  });
+
+  it("converts an ETH-only offer using that day's rate, and flags the price as approx", async () => {
+    // Cached rather than a real CoinGecko call — a past day's rate never
+    // changes, so pre-seeding the cache is exactly what a warm cache looks
+    // like, and keeps this test offline and deterministic.
+    await prisma.ethRate.create({
+      data: { date: new Date("2026-05-01T00:00:00.000Z"), eurPerEth: 2000 },
+    });
+
+    feed(
+      [
+        {
+          transactionDate: "2026-05-01T12:00:00Z",
+          endDate: "2026-05-01T12:00:00Z",
+          senderSide: {
+            anyCards: [{ slug: "eth-player-2024-rare-3", anyPlayer: { slug: "eth-player", displayName: "Eth Player" } }],
+          },
+          // 0.05 ETH, no eurCents at all — the exact gap the ETH fallback exists for.
+          receiverSide: { amounts: { eurCents: null, usdCents: null, referenceCurrency: "ETH", wei: "50000000000000000" } },
+        },
+      ],
+      []
+    );
+
+    const res = await syncSoldOffersFromSorare();
+    expect(res.sold).toBe(1);
+
+    const sale = await prisma.sale.findUnique({ where: { cardSlug: "eth-player-2024-rare-3" } });
+    expect(sale?.soldPrice).toBeCloseTo(100, 2); // 0.05 ETH * 2000 €/ETH
+    expect(sale?.soldPriceApprox).toBe(true);
+  });
+
+  it("leaves the price null when neither eurCents nor a wei amount is available", async () => {
+    feed(
+      [
+        {
+          transactionDate: "2026-05-01T12:00:00Z",
+          endDate: "2026-05-01T12:00:00Z",
+          senderSide: {
+            anyCards: [{ slug: "no-price-2024-rare-4", anyPlayer: { slug: "no-price", displayName: "No Price" } }],
+          },
+          receiverSide: { amounts: { eurCents: null, usdCents: null, referenceCurrency: "ETH", wei: null } },
+        },
+      ],
+      []
+    );
+
+    await syncSoldOffersFromSorare();
+
+    const sale = await prisma.sale.findUnique({ where: { cardSlug: "no-price-2024-rare-4" } });
+    expect(sale?.soldPrice).toBeNull();
+    expect(sale?.soldPriceApprox).toBe(false);
   });
 
   it("upgrades a row the CSV diff had only guessed at, keeping the real price", async () => {

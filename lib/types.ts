@@ -121,3 +121,33 @@ export function u23Status(birthDate: string | null): { eligible: boolean; validU
   validUntil.setFullYear(validUntil.getFullYear() + 23);
   return { eligible: validUntil.getTime() > Date.now(), validUntil };
 }
+
+/**
+ * Sort value for "trier par U23": the 23rd-birthday timestamp for a
+ * currently-eligible player, so ranking naturally reads as "most time left
+ * as U23 first" on descending — a manager scanning for prospects worth
+ * holding, not just who happens to be under 23 today. Anyone ineligible (or
+ * with no known birth date) sorts last via compareNullable, in both directions —
+ * "not U23" is never accidentally the top of a U23 sort.
+ */
+export function u23SortValue(birthDate: string | null): number | null {
+  const status = u23Status(birthDate);
+  return status?.eligible ? status.validUntil.getTime() : null;
+}
+
+/**
+ * Comparator for a sortable list column: null/undefined never wins a sort —
+ * "unknown" must not read as "smallest" (a card with no price would otherwise
+ * jump to the top of a cheapest-first sort) or "largest". It always sorts
+ * last, in both directions, and only the direction flips the known values.
+ */
+export function compareNullable(
+  a: number | null | undefined,
+  b: number | null | undefined,
+  direction: "asc" | "desc"
+): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  return direction === "asc" ? a - b : b - a;
+}

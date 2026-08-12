@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/apiFetch";
-import { POSITION_SHORT } from "@/lib/types";
+import { POSITION_SHORT, compareNullable, u23Status, u23SortValue } from "@/lib/types";
 import { formatMoney as money, relativeDate as daysAgo } from "@/lib/format";
 import { scoreColor, SCORE_COLOR_CLASS } from "@/lib/types";
+import SortControl, { type SortDirection } from "./SortControl";
 
 type Money = { amount: number; currency: string } | null;
 
@@ -21,6 +22,7 @@ type ScoutPlayer = {
   position: string;
   club: string | null;
   picture: string | null;
+  birthDate: string | null;
   avgL5: number | null;
   avgL10Played: number | null;
   app15: number | null;
@@ -36,6 +38,26 @@ type League = { slug: string; name: string; country: string | null };
 
 /** Leagues worth putting first for a French manager; the rest stay alphabetical. */
 const PINNED = ["ligue-1-fr", "premier-league-gb-eng", "laliga-es", "serie-a-it", "bundesliga-de", "ligue-2-fr"];
+
+type ScoutSortKey = "form" | "played" | "price" | "trend" | "name" | "u23";
+
+const SCOUT_SORTS: [ScoutSortKey, string][] = [
+  ["form", "Forme (L5)"],
+  ["played", "Régularité"],
+  ["price", "Prix"],
+  ["trend", "Tendance"],
+  ["name", "Nom"],
+  ["u23", "U23"],
+];
+
+const SCOUT_DEFAULT_DIRECTION: Record<ScoutSortKey, SortDirection> = {
+  form: "desc",
+  played: "desc",
+  price: "asc", // shopping list — cheapest first by default
+  trend: "asc", // falling price first — the buying opportunity
+  name: "asc",
+  u23: "desc",
+};
 
 /** The in-season sale history block, slotted into the shared player popup on open. */
 function SaleHistory({ trend, floorInSeason, floorAnySeason, rarity }: { trend: SaleTrend | null; floorInSeason: Money; floorAnySeason: Money; rarity: string }) {
@@ -99,6 +121,8 @@ export default function Scouting({
   const [players, setPlayers] = useState<ScoutPlayer[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [sort, setSort] = useState<ScoutSortKey>("form");
+  const [direction, setDirection] = useState<SortDirection>(SCOUT_DEFAULT_DIRECTION.form);
 
   useEffect(() => {
     apiFetch<{ leagues: League[] }>("/api/scouting")
@@ -128,6 +152,20 @@ export default function Scouting({
   }, [league, rarity, onError]);
 
   const noSales = loaded && players.length > 0 && players.every((p) => !p.inSeasonTrend?.sales.length);
+
+  const sortedPlayers = useMemo(() => {
+    return [...players].sort((a, b) => {
+      if (sort === "name") {
+        const cmp = a.name.localeCompare(b.name, "fr");
+        return direction === "asc" ? cmp : -cmp;
+      }
+      if (sort === "played") return compareNullable(a.app15, b.app15, direction);
+      if (sort === "price") return compareNullable(a.inSeasonTrend?.lastSale?.amount, b.inSeasonTrend?.lastSale?.amount, direction);
+      if (sort === "trend") return compareNullable(a.inSeasonTrend?.trendPct, b.inSeasonTrend?.trendPct, direction);
+      if (sort === "u23") return compareNullable(u23SortValue(a.birthDate), u23SortValue(b.birthDate), direction);
+      return compareNullable(a.avgL5, b.avgL5, direction);
+    });
+  }, [players, sort, direction]);
 
   return (
     <div className="space-y-3">
@@ -200,6 +238,19 @@ export default function Scouting({
         (enchère ou achat direct), pas une simple annonce. Tape une ligne pour tout voir sur le joueur.
       </p>
 
+      {players.length > 0 && (
+        <SortControl
+          sortKey={sort}
+          onSortKey={(k) => {
+            setSort(k);
+            setDirection(SCOUT_DEFAULT_DIRECTION[k]);
+          }}
+          options={SCOUT_SORTS}
+          direction={direction}
+          onDirection={setDirection}
+        />
+      )}
+
       {noSales && (
         <p className="text-xs text-limited bg-limited/10 border border-limited/40 rounded-md px-2.5 py-2">
           Aucune vente in-season {rarity} conclue récemment sur ces joueurs.
@@ -211,8 +262,9 @@ export default function Scouting({
       )}
 
       <ul className="flex flex-col gap-2">
-        {players.map((p) => {
+        {sortedPlayers.map((p) => {
           const t = p.inSeasonTrend;
+          const u23 = u23Status(p.birthDate);
           return (
             <li key={p.slug}>
               <button
@@ -243,6 +295,14 @@ export default function Scouting({
                     {p.injury && (
                       <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-warn/15 text-warn font-mono">
                         blessé
+                      </span>
+                    )}
+                    {u23?.eligible && (
+                      <span
+                        className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-flood/15 text-flood font-mono"
+                        title={`U23 · éligible jusqu'au ${u23.validUntil.toLocaleDateString("fr-FR")}`}
+                      >
+                        U23
                       </span>
                     )}
                   </p>

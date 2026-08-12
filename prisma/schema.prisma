@@ -259,10 +259,28 @@ model Sale {
   /// the UI should prefer this over lastKnownPrice entirely.
   soldPrice Float?
   soldAt    DateTime?
+  /// True when soldPrice had to be derived from a wei-denominated Sorare
+  /// offer via a historical ETH/EUR rate (see lib/services/ethRate.ts)
+  /// because Sorare's own record carried no direct EUR figure for it. The UI
+  /// must flag this as an approximation rather than presenting it as the
+  /// exact confirmed price the way a direct eurCents figure is.
+  soldPriceApprox   Boolean @default(false)
+  boughtPriceApprox Boolean @default(false)
   /// "csv_diff" (inferred, see above) | "sorare_sync" (confirmed transaction)
   source    String    @default("csv_diff")
 
   @@index([playerSlug])
+}
+
+/// One calendar day's ETH→EUR rate, from CoinGecko's free historical-price
+/// endpoint. A past day's rate never changes, so this is a permanent cache —
+/// it exists purely to keep re-opening Historique from re-fetching the same
+/// handful of dates and risking CoinGecko's free-tier rate limit. See
+/// lib/services/ethRate.ts.
+model EthRate {
+  date      DateTime @id
+  eurPerEth Float
+  fetchedAt DateTime @default(now())
 }
 
 /// A standing signal worth a badge on the player's card: a live price swing,

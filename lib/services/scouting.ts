@@ -30,6 +30,8 @@ export interface ScoutPlayer {
   position: string;
   club: string | null;
   picture: string | null;
+  /** ISO date of birth — powers the U23 badge/sort, same as the Galerie. */
+  birthDate: string | null;
   avgL5: number | null;
   avgL10Played: number | null;
   app15: number | null;
@@ -84,6 +86,7 @@ query PlayerMarket($slugs: [String!]!, $rarity: Rarity!) {
     squaredPictureUrl
     activeClub { ... on Club { name } }
     activeInjuries { status }
+    birthDate: birthDay
     avgL5: averageScore(type: LAST_FIVE_SO5_AVERAGE_SCORE)
     avgL10Played: averageScore(type: LAST_TEN_PLAYED_SO5_AVERAGE_SCORE)
     lastFifteenSo5Appearances
@@ -207,6 +210,7 @@ export async function scoutLeague(
       position: p.anyPositions?.[0] ?? "Midfielder",
       club: p.activeClub?.name ?? null,
       picture: p.squaredPictureUrl ?? null,
+      birthDate: p.birthDate ?? null,
       avgL5: p.avgL5 ?? null,
       avgL10Played: p.avgL10Played ?? null,
       app15: p.lastFifteenSo5Appearances ?? null,

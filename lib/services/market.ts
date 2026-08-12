@@ -13,6 +13,8 @@ export interface PlayerSearchResult {
   name: string;
   position: string;
   club: string | null;
+  /** ISO date of birth — powers the U23 badge/sort, same as the Galerie. */
+  birthDate: string | null;
 }
 
 export interface MarketFloor {
@@ -32,7 +34,7 @@ const SEARCH_QUERY = `
 query SearchPlayers($query: String!, $pageSize: Int!) {
   searchPlayers(query: $query, pageSize: $pageSize) {
     commonPlayerHits {
-      anyPlayer { slug displayName anyPositions activeClub { ... on Club { name } } }
+      anyPlayer { slug displayName anyPositions activeClub { ... on Club { name } } birthDate: birthDay }
     }
   }
 }`;
@@ -79,6 +81,7 @@ export async function searchPlayers(query: string): Promise<PlayerSearchResult[]
       name: p.displayName ?? p.slug,
       position: p.anyPositions?.[0] ?? "Midfielder",
       club: p.activeClub?.name ?? null,
+      birthDate: p.birthDate ?? null,
     }));
 }
 

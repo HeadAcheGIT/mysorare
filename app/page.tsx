@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch, ApiFetchError } from "@/lib/apiFetch";
-import { POSITION_SHORT, type SquadCard, type SquadResponse } from "@/lib/types";
+import { POSITION_SHORT, compareNullable, u23SortValue, u23Status, type SquadCard, type SquadResponse } from "@/lib/types";
 import PlayerCard from "./components/PlayerCard";
 import AlertBadges, { type PlayerAlert } from "./components/AlertBadges";
 import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, HistoryIcon, DataIcon } from "./components/NavIcons";
 import PlayerSheet from "./components/PlayerSheet";
-import GalleryFilters, { type SortKey } from "./components/GalleryFilters";
+import GalleryFilters, { type SortKey, type SortDirection, DEFAULT_DIRECTION } from "./components/GalleryFilters";
+import SortControl from "./components/SortControl";
 import GallerySummary from "./components/GallerySummary";
 import CsvImport from "./components/CsvImport";
 import SorareLogin from "./components/SorareLogin";
@@ -91,6 +92,7 @@ export default function Page() {
   const [position, setPosition] = useState("");
   const [rarity, setRarity] = useState("");
   const [sort, setSort] = useState<SortKey>("score");
+  const [direction, setDirection] = useState<SortDirection>(DEFAULT_DIRECTION.score);
   const [inSeasonOnly, setInSeasonOnly] = useState(false);
 
   // Line-up
@@ -115,6 +117,8 @@ export default function Page() {
     lastEstimatedPrice: number | null;
     soldPrice: number | null;
     soldAt: string | null;
+    soldPriceApprox: boolean;
+    boughtPriceApprox: boolean;
     source: string;
     detectedAt: string;
     currentFloor: number | null;
@@ -133,6 +137,53 @@ export default function Page() {
       setSalesLoading(false);
     }
   }, []);
+
+  type SaleSortKey = "date" | "price" | "change";
+  const SALE_SORTS: [SaleSortKey, string][] = [
+    ["date", "Date"],
+    ["price", "Prix de vente"],
+    ["change", "Écart vs floor actuel"],
+  ];
+  const SALE_DEFAULT_DIRECTION: Record<SaleSortKey, SortDirection> = { date: "desc", price: "desc", change: "desc" };
+  const [saleSort, setSaleSort] = useState<SaleSortKey>("date");
+  const [saleDirection, setSaleDirection] = useState<SortDirection>(SALE_DEFAULT_DIRECTION.date);
+  const sortedSales = useMemo(() => {
+    return [...sales].sort((a, b) => {
+      if (saleSort === "price") {
+        const refA = a.soldPrice ?? a.lastKnownPrice ?? a.lastFloorPrice;
+        const refB = b.soldPrice ?? b.lastKnownPrice ?? b.lastFloorPrice;
+        return compareNullable(refA, refB, saleDirection);
+      }
+      if (saleSort === "change") {
+        return compareNullable(a.changePct, b.changePct, saleDirection);
+      }
+      const whenA = new Date(a.soldAt ?? a.detectedAt).getTime();
+      const whenB = new Date(b.soldAt ?? b.detectedAt).getTime();
+      return saleDirection === "asc" ? whenA - whenB : whenB - whenA;
+    });
+  }, [sales, saleSort, saleDirection]);
+
+  // Recap block: only sales with a confirmed Sorare price count toward the
+  // good-call/bad-call tally and the plus/moins-value total — a CSV-estimated
+  // row was never a real transaction, so it can't tell you whether selling
+  // was the right move.
+  const salesRecap = useMemo(() => {
+    const confirmed = sales.filter((s) => s.source === "sorare_sync" && s.soldPrice != null);
+    const withChange = confirmed.filter((s) => s.changePct != null);
+    const goodCalls = withChange.filter((s) => s.changePct! <= 0).length;
+    const badCalls = withChange.filter((s) => s.changePct! > 0).length;
+    const withProfit = confirmed.filter((s) => s.boughtPrice != null);
+    const totalProfit = withProfit.reduce((sum, s) => sum + (s.soldPrice! - s.boughtPrice!), 0);
+    const approxCount = confirmed.filter((s) => s.soldPriceApprox).length;
+    return {
+      confirmedCount: confirmed.length,
+      goodCalls,
+      badCalls,
+      totalProfit,
+      profitCount: withProfit.length,
+      approxCount,
+    };
+  }, [sales]);
 
   async function syncSalesFromSorare() {
     setSalesSyncing(true);
@@ -157,9 +208,57 @@ export default function Page() {
   // Market
   const [marketQuery, setMarketQuery] = useState("");
   const [marketResults, setMarketResults] = useState<
-    { slug: string; name: string; position: string; club: string | null }[]
+    { slug: string; name: string; position: string; club: string | null; birthDate: string | null }[]
   >([]);
   const [marketLoading, setMarketLoading] = useState(false);
+  type MarketSortKey = "name" | "position" | "club" | "u23";
+  const MARKET_SORTS: [MarketSortKey, string][] = [
+    ["name", "Nom"],
+    ["position", "Poste"],
+    ["club", "Club"],
+    ["u23", "U23"],
+  ];
+  const MARKET_DEFAULT_DIRECTION: Record<MarketSortKey, SortDirection> = {
+    name: "asc",
+    position: "asc",
+    club: "asc",
+    u23: "desc",
+  };
+  const [marketSort, setMarketSort] = useState<MarketSortKey>("name");
+  const [marketDirection, setMarketDirection] = useState<SortDirection>(MARKET_DEFAULT_DIRECTION.name);
+  const sortedMarketResults = useMemo(() => {
+    return [...marketResults].sort((a, b) => {
+      if (marketSort === "position") {
+        const cmp = a.position.localeCompare(b.position, "fr");
+        return marketDirection === "asc" ? cmp : -cmp;
+      }
+      if (marketSort === "club") {
+        const cmp = (a.club ?? "").localeCompare(b.club ?? "", "fr");
+        return marketDirection === "asc" ? cmp : -cmp;
+      }
+      if (marketSort === "u23") {
+        return compareNullable(u23SortValue(a.birthDate), u23SortValue(b.birthDate), marketDirection);
+      }
+      const cmp = a.name.localeCompare(b.name, "fr");
+      return marketDirection === "asc" ? cmp : -cmp;
+    });
+  }, [marketResults, marketSort, marketDirection]);
+
+  type WatchlistSortKey = "name" | "position" | "club" | "price";
+  const WATCHLIST_SORTS: [WatchlistSortKey, string][] = [
+    ["name", "Nom"],
+    ["position", "Poste"],
+    ["club", "Club"],
+    ["price", "Prix (floor unique)"],
+  ];
+  const WATCHLIST_DEFAULT_DIRECTION: Record<WatchlistSortKey, SortDirection> = {
+    name: "asc",
+    position: "asc",
+    club: "asc",
+    price: "asc",
+  };
+  const [watchlistSort, setWatchlistSort] = useState<WatchlistSortKey>("name");
+  const [watchlistDirection, setWatchlistDirection] = useState<SortDirection>(WATCHLIST_DEFAULT_DIRECTION.name);
   type WatchlistItemRow = { playerSlug: string; label: string; position: string | null; club: string | null };
   type WatchlistGroupRow = { id: number; name: string; items: WatchlistItemRow[] };
   const [watchlistGroups, setWatchlistGroups] = useState<WatchlistGroupRow[]>([]);
@@ -169,6 +268,32 @@ export default function Page() {
   const [prices, setPrices] = useState<
     Record<string, { floorByRarity: Record<string, number | null>; listedCount: number } | "loading" | "error">
   >({});
+  // Cheapest fetched floor across rarities — "prix" sort only has something to
+  // work with once "Prix" has been clicked on a row, so unpriced items sort
+  // last via compareNullable rather than looking arbitrarily unordered.
+  function watchlistPriceFloor(slug: string): number | null {
+    const p = prices[slug];
+    if (!p || p === "loading" || p === "error") return null;
+    const values = Object.values(p.floorByRarity).filter((v): v is number => v != null);
+    return values.length ? Math.min(...values) : null;
+  }
+  const sortedWatchlist = useMemo(() => {
+    return [...watchlist].sort((a, b) => {
+      if (watchlistSort === "position") {
+        const cmp = (a.position ?? "").localeCompare(b.position ?? "", "fr");
+        return watchlistDirection === "asc" ? cmp : -cmp;
+      }
+      if (watchlistSort === "club") {
+        const cmp = (a.club ?? "").localeCompare(b.club ?? "", "fr");
+        return watchlistDirection === "asc" ? cmp : -cmp;
+      }
+      if (watchlistSort === "price") {
+        return compareNullable(watchlistPriceFloor(a.playerSlug), watchlistPriceFloor(b.playerSlug), watchlistDirection);
+      }
+      const cmp = a.label.localeCompare(b.label, "fr");
+      return watchlistDirection === "asc" ? cmp : -cmp;
+    });
+  }, [watchlist, watchlistSort, watchlistDirection, prices]);
 
   const loadSquad = useCallback(async () => {
     try {
@@ -298,18 +423,22 @@ export default function Page() {
       return c.name.toLowerCase().includes(q) || (c.club ?? "").toLowerCase().includes(q);
     });
 
-    const score = (c: SquadCard) => c.expected ?? c.sorareProjection ?? c.l10 ?? -1;
+    const score = (c: SquadCard) => c.expected ?? c.sorareProjection ?? c.l10;
     const formAvg = (c: SquadCard) =>
-      c.recentScores.length ? c.recentScores.reduce((a, b) => a + b, 0) / c.recentScores.length : -1;
+      c.recentScores.length ? c.recentScores.reduce((a, b) => a + b, 0) / c.recentScores.length : null;
 
     return [...list].sort((a, b) => {
-      if (sort === "name") return a.name.localeCompare(b.name, "fr");
-      if (sort === "price") return (b.floorPrice ?? -1) - (a.floorPrice ?? -1);
-      if (sort === "form") return formAvg(b) - formAvg(a);
-      if (sort === "titu") return (b.pStart ?? -1) - (a.pStart ?? -1);
-      return score(b) - score(a);
+      if (sort === "name") {
+        const cmp = a.name.localeCompare(b.name, "fr");
+        return direction === "asc" ? cmp : -cmp;
+      }
+      if (sort === "price") return compareNullable(a.floorPrice, b.floorPrice, direction);
+      if (sort === "form") return compareNullable(formAvg(a), formAvg(b), direction);
+      if (sort === "titu") return compareNullable(a.pStart, b.pStart, direction);
+      if (sort === "u23") return compareNullable(u23SortValue(a.birthDate), u23SortValue(b.birthDate), direction);
+      return compareNullable(score(a), score(b), direction);
     });
-  }, [squad, search, position, rarity, inSeasonOnly, sort]);
+  }, [squad, search, position, rarity, inSeasonOnly, sort, direction]);
 
   async function runOptimise() {
     if (!competition) return;
@@ -634,6 +763,8 @@ export default function Page() {
                   onRarity={setRarity}
                   sort={sort}
                   onSort={setSort}
+                  direction={direction}
+                  onDirection={setDirection}
                   inSeasonOnly={inSeasonOnly}
                   onInSeasonOnly={setInSeasonOnly}
                 />
@@ -810,9 +941,23 @@ export default function Page() {
             </div>
 
             {marketResults.length > 0 && (
-              <ul className="flex flex-col gap-2 mb-6">
-                {marketResults.map((p) => {
+              <>
+                <div className="mb-2">
+                  <SortControl
+                    sortKey={marketSort}
+                    onSortKey={(k) => {
+                      setMarketSort(k);
+                      setMarketDirection(MARKET_DEFAULT_DIRECTION[k]);
+                    }}
+                    options={MARKET_SORTS}
+                    direction={marketDirection}
+                    onDirection={setMarketDirection}
+                  />
+                </div>
+                <ul className="flex flex-col gap-2 mb-6">
+                {sortedMarketResults.map((p) => {
                   const price = prices[p.slug];
+                  const u23 = u23Status(p.birthDate);
                   return (
                     <li key={p.slug} className="p-3 rounded-lg bg-ink2 border border-line">
                       <div className="flex items-center justify-between gap-2">
@@ -824,6 +969,14 @@ export default function Page() {
                           <p className="font-bold truncate flex items-center gap-1.5">
                             {p.name}
                             <AlertBadges alerts={alertsBySlug[p.slug]} />
+                            {u23?.eligible && (
+                              <span
+                                className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-flood/15 text-flood font-mono"
+                                title={`U23 · éligible jusqu'au ${u23.validUntil.toLocaleDateString("fr-FR")}`}
+                              >
+                                U23
+                              </span>
+                            )}
                           </p>
                           <p className="text-xs text-muted truncate">
                             {POSITION_SHORT[p.position] ?? p.position} · {p.club ?? "—"}
@@ -862,7 +1015,8 @@ export default function Page() {
                     </li>
                   );
                 })}
-              </ul>
+                </ul>
+              </>
             )}
 
             </div>
@@ -913,8 +1067,23 @@ export default function Page() {
               </button>
             </div>
 
+            {watchlist.length > 0 && (
+              <div className="mb-2">
+                <SortControl
+                  sortKey={watchlistSort}
+                  onSortKey={(k) => {
+                    setWatchlistSort(k);
+                    setWatchlistDirection(WATCHLIST_DEFAULT_DIRECTION[k]);
+                  }}
+                  options={WATCHLIST_SORTS}
+                  direction={watchlistDirection}
+                  onDirection={setWatchlistDirection}
+                />
+              </div>
+            )}
+
             <ul className="flex flex-col gap-2">
-              {watchlist.map((w) => {
+              {sortedWatchlist.map((w) => {
                 const price = prices[w.playerSlug];
                 return (
                   <li key={w.playerSlug} className="p-3 rounded-lg bg-ink2 border border-line">
@@ -995,33 +1164,101 @@ export default function Page() {
               <p className="font-mono text-sm text-muted">Aucune carte vendue ou transférée détectée pour l&apos;instant.</p>
             )}
 
+            {salesRecap.confirmedCount > 0 && (
+              <div className="p-3 rounded-lg bg-ink2 border border-line grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-muted">Bons calls</p>
+                  <p className="font-display text-lg text-ok">
+                    {salesRecap.goodCalls}
+                    <span className="text-muted text-xs">/{salesRecap.goodCalls + salesRecap.badCalls}</span>
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-muted">Plus/moins-value</p>
+                  <p className={`font-display text-lg ${salesRecap.totalProfit >= 0 ? "text-ok" : "text-warn"}`}>
+                    {salesRecap.profitCount > 0 ? (
+                      <>
+                        {salesRecap.totalProfit >= 0 ? "+" : ""}
+                        {salesRecap.totalProfit.toFixed(2)} €
+                      </>
+                    ) : (
+                      <span className="text-muted text-sm">—</span>
+                    )}
+                  </p>
+                </div>
+                <p className="col-span-2 text-[11px] font-mono text-muted">
+                  {salesRecap.confirmedCount} vente{salesRecap.confirmedCount === 1 ? "" : "s"} confirmée
+                  {salesRecap.confirmedCount === 1 ? "" : "s"} par Sorare
+                  {salesRecap.profitCount < salesRecap.confirmedCount &&
+                    ` (${salesRecap.confirmedCount - salesRecap.profitCount} sans prix d'achat connu)`}
+                  {salesRecap.approxCount > 0 &&
+                    ` · ${salesRecap.approxCount} converti${salesRecap.approxCount === 1 ? "" : "s"} depuis l'ETH (≈)`}
+                </p>
+              </div>
+            )}
+
+            {sales.length > 0 && (
+              <SortControl
+                sortKey={saleSort}
+                onSortKey={(k) => {
+                  setSaleSort(k);
+                  setSaleDirection(SALE_DEFAULT_DIRECTION[k]);
+                }}
+                options={SALE_SORTS}
+                direction={saleDirection}
+                onDirection={setSaleDirection}
+              />
+            )}
+
             <ul className="flex flex-col gap-2">
-              {sales.map((s) => {
+              {sortedSales.map((s) => {
                 const confirmed = s.source === "sorare_sync" && s.soldPrice != null;
                 const reference = s.soldPrice ?? s.lastKnownPrice ?? s.lastFloorPrice;
                 const profit = confirmed && s.boughtPrice != null ? s.soldPrice! - s.boughtPrice : null;
                 const when = s.soldAt ?? s.detectedAt;
                 return (
                   <li key={s.cardSlug} className="p-3 rounded-lg bg-ink2 border border-line">
-                    <button
-                      type="button"
-                      onClick={() => openPlayer(s.playerSlug)}
-                      className="w-full text-left"
-                    >
-                      <p className="font-bold truncate">{s.playerName}</p>
-                      <p className="text-xs text-muted truncate">
-                        {s.rarity}
-                        {s.season != null && ` · saison ${s.season}`}
-                        {s.serialNumber != null && ` · #${s.serialNumber}`}
-                        {" · "}
-                        {new Date(when).toLocaleDateString("fr-FR")}
-                      </p>
-                    </button>
+                    <div className="flex items-start justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openPlayer(s.playerSlug)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <p className="font-bold truncate">{s.playerName}</p>
+                        <p className="text-xs text-muted truncate">
+                          {s.rarity}
+                          {s.season != null && ` · saison ${s.season}`}
+                          {s.serialNumber != null && ` · #${s.serialNumber}`}
+                          {" · "}
+                          {new Date(when).toLocaleDateString("fr-FR")}
+                        </p>
+                      </button>
+                      <a
+                        href={`https://sorare.com/football/cards/${s.cardSlug}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="shrink-0 text-xs text-muted border border-line rounded-md px-2 py-1 hover:text-white hover:border-flood/60"
+                        aria-label={`Voir la carte de ${s.playerName} sur Sorare`}
+                      >
+                        Carte ↗
+                      </a>
+                    </div>
 
                     <div className="mt-2 font-mono text-xs flex flex-wrap gap-x-4 gap-y-1 text-muted">
-                      {s.boughtPrice != null && <span>Acheté {s.boughtPrice.toFixed(2)} €</span>}
+                      {s.boughtPrice != null && (
+                        <span>
+                          Acheté {s.boughtPrice.toFixed(2)} €{s.boughtPriceApprox && (
+                            <span title="Converti depuis un montant en ETH au cours du jour de l'achat (CoinGecko)"> ≈</span>
+                          )}
+                        </span>
+                      )}
                       {confirmed ? (
-                        <span className="text-white">Vendu {s.soldPrice!.toFixed(2)} €</span>
+                        <span className="text-white">
+                          Vendu {s.soldPrice!.toFixed(2)} €{s.soldPriceApprox && (
+                            <span title="Converti depuis un montant en ETH au cours du jour de la vente (CoinGecko)"> ≈</span>
+                          )}
+                        </span>
                       ) : (
                         reference != null && <span>Dernière valo (estimation) {reference.toFixed(2)} €</span>
                       )}
