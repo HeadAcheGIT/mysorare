@@ -35,6 +35,8 @@ export type EnrichProgress = {
   total: number;
   /** Players that have never been enriched at all — the ones that break insights. */
   neverEnriched: number;
+  /** Batches that errored out — a query-level bug (bad field, schema drift) fails every page identically. */
+  failed: number;
 };
 
 type ApiPlayer = {
@@ -94,16 +96,28 @@ export async function enrichBatch(): Promise<EnrichProgress> {
         data: { job: "enrich", status: "ok", detail: `${total} joueurs à jour` },
       });
     }
-    return { processed: 0, remaining: 0, total, neverEnriched: neverEnrichedBefore };
+    return { processed: 0, remaining: 0, total, neverEnriched: neverEnrichedBefore, failed: 0 };
   }
 
   const started = Date.now();
   let processed = 0;
+  let failed = 0;
+  let lastError: string | null = null;
   for (let i = 0; i < due.length; i += PLAYERS_PER_QUERY) {
     if (i > 0 && Date.now() - started > TIME_BUDGET_MS) break;
     const page = due.slice(i, i + PLAYERS_PER_QUERY);
-    await enrichPlayers(page.map((p) => p.slug));
-    processed += page.length;
+    // One page failing (a schema drift, a transient 5xx, one malformed slug)
+    // must not sink every other page in the batch — that turned a single bad
+    // field name into a silent, total enrichment outage for hours, since
+    // nothing else surfaced the failure anywhere a user would see it.
+    try {
+      await enrichPlayers(page.map((p) => p.slug));
+      processed += page.length;
+    } catch (err) {
+      failed++;
+      lastError = err instanceof Error ? err.message : String(err);
+      console.error("[enrich] batch failed:", lastError);
+    }
   }
 
   const [remaining, neverEnriched] = await Promise.all([
@@ -111,12 +125,18 @@ export async function enrichBatch(): Promise<EnrichProgress> {
     prisma.player.count({ where: { enrichedAt: null } }),
   ]);
 
-  if (remaining === 0) {
+  if (failed > 0) {
+    // Visible in the Données tab's Journal — the whole point is that this
+    // used to fail with nothing to see there at all.
+    await prisma.syncLog.create({
+      data: { job: "enrich", status: "error", detail: `${failed} lot(s) en échec : ${lastError}` },
+    });
+  } else if (remaining === 0) {
     await prisma.syncLog.create({
       data: { job: "enrich", status: "ok", detail: `${total} joueurs enrichis` },
     });
   }
-  return { processed, remaining, total, neverEnriched };
+  return { processed, remaining, total, neverEnriched, failed };
 }
 
 /** Fetches one query's worth of players and writes them in two statements. */

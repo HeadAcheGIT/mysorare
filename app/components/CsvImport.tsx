@@ -60,11 +60,12 @@ export default function CsvImport({ onDone }: { onDone: () => void }) {
       setPhase("enriching");
       let guard = 0;
       for (;;) {
-        const batch = await apiFetch<{ processed: number; remaining: number; total: number }>(
+        const batch = await apiFetch<{ processed: number; remaining: number; total: number; failed: number }>(
           "/api/enrich",
           { method: "POST" }
         );
         setProgress({ done: batch.total - batch.remaining, total: batch.total });
+        if (batch.failed > 0) throw new Error(`${batch.failed} lot(s) en échec — voir le Journal pour le détail.`);
         // processed === 0 means nothing was due — stop rather than spin.
         if (batch.remaining === 0 || batch.processed === 0) break;
         if (++guard > 60) break;

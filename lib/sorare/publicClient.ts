@@ -67,13 +67,20 @@ export async function publicGraphql<T = unknown>(
  */
 export const PLAYERS_PER_QUERY = 15;
 
+// players(slugs) returns AnyPlayerInterface, which has no birthDate field —
+// only the concrete Player type does, and this connection can't use an
+// inline fragment to reach it. Verified against the live API: a field name
+// that "sounds right" from reading the schema isn't the same as confirming
+// it resolves on the type actually returned here. The interface does expose
+// birthDay (date-only, no time), aliased back to the name every downstream
+// consumer already expects.
 export const PLAYERS_BY_SLUG = `
 query PlayersBySlug($slugs: [String!]!) {
   players(slugs: $slugs) {
     slug
     displayName
     age
-    birthDate
+    birthDate: birthDay
     shirtNumber
     anyPositions
     avatarPictureUrl

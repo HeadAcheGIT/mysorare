@@ -1,0 +1,14 @@
+-- Force re-enrichment of every player missing the badge fields added in
+-- 3_badges (birthDate, and by extension Club.competitionName). The
+-- staleness check in lib/services/enrich.ts only re-fetches a player once
+-- 12h have passed since their last successful enrich — it has no way to
+-- know a new column was added and never backfilled for rows that were
+-- already fresh. Worse, the query that populates these fields was broken
+-- (querying `birthDate` on an interface that doesn't expose it) from the
+-- moment 3_badges shipped until the fix in this same migration set, so
+-- nothing had actually been backfilled yet regardless of staleness.
+--
+-- Resetting enrichedAt to NULL puts every affected player back at the front
+-- of the "due" queue (nulls sort first), so the very next manual refresh or
+-- daily cron run picks them up.
+UPDATE "Player" SET "enrichedAt" = NULL WHERE "birthDate" IS NULL;

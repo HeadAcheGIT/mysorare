@@ -32,11 +32,14 @@ export default function DataHealth({
     try {
       let guard = 0;
       for (;;) {
-        const batch = await apiFetch<{ processed: number; remaining: number; total: number }>(
+        const batch = await apiFetch<{ processed: number; remaining: number; total: number; failed: number }>(
           "/api/enrich",
           { method: "POST" }
         );
         setProgress({ done: batch.total - batch.remaining, total: batch.total });
+        // A failed batch doesn't throw (one bad page shouldn't sink the rest),
+        // but it must not read as a silent success either.
+        if (batch.failed > 0) throw new Error(`${batch.failed} lot(s) en échec — voir le Journal pour le détail.`);
         // processed === 0 means nothing was due; stop rather than spin.
         if (batch.remaining === 0 || batch.processed === 0) break;
         // Belt and braces: never loop forever if the server stops converging.

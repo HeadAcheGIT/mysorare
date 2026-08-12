@@ -376,11 +376,12 @@ export default function Page() {
     try {
       let guard = 0;
       for (;;) {
-        const batch = await apiFetch<{ processed: number; remaining: number; total: number }>(
+        const batch = await apiFetch<{ processed: number; remaining: number; total: number; failed: number }>(
           "/api/enrich",
           { method: "POST" }
         );
         setNotice(`${batch.total - batch.remaining}/${batch.total} joueurs`);
+        if (batch.failed > 0) throw new Error(`${batch.failed} lot(s) en échec — voir le Journal pour le détail.`);
         if (batch.remaining === 0 || batch.processed === 0) break;
         if (++guard > 60) break;
       }

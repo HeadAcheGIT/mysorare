@@ -3,6 +3,57 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-12 (matin) — Enrichissement cassé depuis hier soir : U23/division invisibles
+
+Signalé par l'utilisateur : pas de badge U23 ni de championnat sur les
+briques de la Galerie. Cause réelle, plus grave que le symptôme rapporté.
+
+### Le vrai bug : `birthDate` n'existe pas sur le type que Sorare renvoie ici
+
+`players(slugs: $slugs)` renvoie `AnyPlayerInterface`, pas le type concret
+`Player` — et `birthDate` n'existe que sur `Player`. Vérifié en direct contre
+l'API : `Field 'birthDate' doesn't exist on type 'AnyPlayerInterface'`.
+Cette requête alimente **tout** l'enrichissement (photos, blessures, scores
+récents, projection Sorare), pas seulement le nouveau champ — donc depuis le
+déploiement d'hier soir, **plus aucun joueur n'a été rafraîchi du tout**.
+
+Corrigé avec l'alias `birthDate: birthDay`, qui existe bien sur l'interface
+(vérifié en direct) — zéro changement de code en aval.
+
+### Pourquoi c'est resté invisible : `enrichBatch` n'avait aucun `try/catch`
+
+La boucle de lots appelait l'API sans se protéger : la première page en échec
+faisait planter tout l'appel. Remonté jusqu'à la route, ça donnait une erreur
+JSON — mais rien n'écrivait dans `SyncLog`, donc rien ne s'affichait dans le
+Journal de l'onglet Données. Le cron quotidien échouait pareil, en silence.
+Une requête cassée a donc pu bloquer tout l'enrichissement pendant des heures
+sans qu'aucun signal ne soit visible nulle part dans l'app.
+
+Corrigé : chaque page est maintenant protégée individuellement — une page en
+échec n'empêche plus les autres d'avancer, et tout échec écrit une entrée
+`SyncLog` de statut `error` (visible dans le Journal) au lieu de se taire.
+Les trois endroits qui bouclent sur `/api/enrich` (import CSV, bouton
+Compléter de l'analyse partielle, Rafraîchir de l'onglet Données) remontent
+maintenant explicitement l'échec plutôt que de s'arrêter silencieusement en
+ayant l'air d'avoir réussi.
+
+### Rattrapage des joueurs déjà "frais"
+
+La sélection des joueurs "à traiter" ne regarde que la fraîcheur
+(`enrichedAt` de plus de 12h) — elle ne peut pas savoir qu'un nouveau champ a
+été ajouté et jamais rempli pour des lignes déjà à jour. Migration qui remet
+`enrichedAt` à `null` pour tout joueur sans `birthDate`, ce qui le repasse en
+tête de file pour le prochain rafraîchissement (manuel ou cron).
+
+4 tests d'intégration ajoutés qui reproduisent l'incident exact : une requête
+qui échoue sur toutes les pages reste visible (compteur `failed`, entrée
+`SyncLog` d'erreur), une page en échec n'empêche pas les autres de réussir,
+et une exécution propre logge bien `ok`.
+
+**Action recommandée** : cliquer sur « Rafraîchir photos et stats » dans
+l'onglet Données pour déclencher le rattrapage immédiatement plutôt que
+d'attendre le prochain cron.
+
 ## 2026-08-12 — Nuit d'audit
 
 ### Service worker : la PWA installée cassait à chaque déploiement
