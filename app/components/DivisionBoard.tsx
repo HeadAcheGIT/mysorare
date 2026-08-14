@@ -81,7 +81,62 @@ type TrackView = {
   divisions: DivisionView[];
 };
 
+type BenchCard = {
+  benchObjectId: string;
+  cardSlug: string | null;
+  playerSlug: string;
+  playerName: string;
+  position: string;
+  rarity: string;
+  bonus: number;
+  sorareProjected: number | null;
+  locked: boolean;
+  ourExpected: number | null;
+  ourPStart: number | null;
+  sorareStarterOdds: number | null;
+};
+
+type ProposalCard = {
+  cardSlug: string;
+  playerSlug: string;
+  playerName: string;
+  position: string;
+  expected: number;
+  pStart: number;
+  isCaptain: boolean;
+};
+
+type DivisionProposal = {
+  leaderboardSlug: string;
+  bench: BenchCard[];
+  lockedCount: number;
+  proposal: { cards: ProposalCard[]; captain: string | null; total: number } | null;
+  infeasibleReason: string | null;
+  delta: {
+    currentTotal: number | null;
+    proposedTotal: number;
+    gain: number | null;
+    cardsIn: string[];
+    cardsOut: string[];
+  } | null;
+  validation: {
+    rewardMultiplier: number | null;
+    feedbackRules: { ruleName: string; state: string; message: string | null }[];
+  } | null;
+};
+
+/**
+ * The failed case is a real state, not an absence: the bench needs a Sorare
+ * session, and silently rendering nothing when it's missing is precisely the
+ * kind of invisible gap that made this screen untrustworthy.
+ */
+type BenchState =
+  | { status: "loading" }
+  | { status: "ready"; data: DivisionProposal }
+  | { status: "error"; message: string };
+
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
+const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 const msg = (err: unknown) => (err instanceof Error ? err.message : "Erreur");
 
@@ -114,6 +169,9 @@ export default function DivisionBoard({
   const [syncing, setSyncing] = useState(false);
   const [seasonalityFilter, setSeasonalityFilter] = useState<"all" | "IN_SEASON" | "ALL_SEASONS">("all");
   const [openDivisions, setOpenDivisions] = useState<Record<string, boolean>>({});
+  // Bench + proposal are fetched per division, on open: a game week exposes
+  // ~76 leaderboards, so loading them all up front would be mostly wasted.
+  const [benches, setBenches] = useState<Record<string, BenchState>>({});
 
   useEffect(() => {
     apiFetch<FixtureRow[]>("/api/fixtures")
@@ -147,8 +205,34 @@ export default function DivisionBoard({
     if (selected) load(selected);
   }, [selected, load]);
 
+  /** Loads a division's real bench and best available line-up, once, on first open. */
+  const loadBench = useCallback(
+    async (leaderboardSlug: string) => {
+      if (!selected) return;
+      setBenches((prev) => ({ ...prev, [leaderboardSlug]: { status: "loading" } }));
+      try {
+        const data = await apiFetch<DivisionProposal>(
+          `/api/divisions/bench?leaderboard=${encodeURIComponent(leaderboardSlug)}&fixture=${encodeURIComponent(selected)}`
+        );
+        setBenches((prev) => ({ ...prev, [leaderboardSlug]: { status: "ready", data } }));
+      } catch (err) {
+        // Kept in place rather than surfaced only as a toast: the reason
+        // belongs next to the division it concerns.
+        setBenches((prev) => ({ ...prev, [leaderboardSlug]: { status: "error", message: msg(err) } }));
+      }
+    },
+    [selected]
+  );
+
+  function toggleDivision(key: string, leaderboardSlug: string, isOpen: boolean) {
+    setOpenDivisions((prev) => ({ ...prev, [key]: !isOpen }));
+    if (!isOpen && !benches[leaderboardSlug]) loadBench(leaderboardSlug);
+  }
+
   async function refresh() {
     if (!selected) return;
+    // A resync invalidates every bench: eligibility and locks move with it.
+    setBenches({});
     setSyncing(true);
     try {
       await apiFetch("/api/divisions/sync", {
@@ -300,7 +384,7 @@ export default function DivisionBoard({
                   <li key={d.slug}>
                     <button
                       type="button"
-                      onClick={() => setOpenDivisions((prev) => ({ ...prev, [key]: !open }))}
+                      onClick={() => toggleDivision(key, d.slug, open)}
                       aria-expanded={open}
                       className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 hover:bg-line/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-flood focus-visible:ring-inset"
                     >
@@ -418,6 +502,119 @@ export default function DivisionBoard({
                               : "Aucune compo alignée dans cette division."}
                           </p>
                         )}
+
+                        {(() => {
+                          const bench = benches[d.slug];
+                          if (!bench) return null;
+                          if (bench.status === "loading") {
+                            return <p className="font-mono text-xs text-muted">Chargement du vivier…</p>;
+                          }
+                          if (bench.status === "error") {
+                            return (
+                              // Le message d'origine (souvent celui de l'auth
+                              // Sorare) dit déjà quoi faire — le répéter ici
+                              // ne ferait que le noyer.
+                              <p className="font-mono text-xs text-warn border-t border-line pt-2">
+                                Vivier et compo proposée indisponibles — {bench.message}
+                              </p>
+                            );
+                          }
+
+                          const { proposal, delta, validation, lockedCount, bench: cards, infeasibleReason } =
+                            bench.data;
+                          const blocking = (validation?.feedbackRules ?? []).filter(
+                            (r) => r.state !== "VALID" && r.state !== "valid"
+                          );
+
+                          return (
+                            <div className="pt-1 space-y-2 border-t border-line">
+                              <p className="text-[10px] font-mono uppercase tracking-wide text-muted">
+                                Compo proposée
+                              </p>
+
+                              {infeasibleReason || !proposal ? (
+                                <p className="font-mono text-xs text-warn">
+                                  Impossible de composer ici avec les cartes disponibles
+                                  {lockedCount > 0 && ` (${lockedCount} déjà engagée${lockedCount > 1 ? "s" : ""} ailleurs)`}
+                                  .
+                                </p>
+                              ) : (
+                                <>
+                                  <p className="font-mono text-[11px] text-muted">
+                                    <span className="font-display text-xl text-flood align-middle">
+                                      {one(proposal.total)}
+                                    </span>{" "}
+                                    pts projetés
+                                    {delta?.gain != null && (
+                                      <span className={delta.gain > 0 ? "text-ok" : delta.gain < 0 ? "text-warn" : ""}>
+                                        {" · "}
+                                        {delta.gain > 0 ? "+" : ""}
+                                        {one(delta.gain)} vs ta compo actuelle
+                                      </span>
+                                    )}
+                                    {delta?.currentTotal == null && d.hasLineup && " · compo actuelle non chiffrable"}
+                                  </p>
+
+                                  <ul className="flex flex-col gap-1">
+                                    {proposal.cards.map((c) => {
+                                      const isNew = delta?.cardsIn.includes(c.cardSlug);
+                                      return (
+                                        <li key={c.cardSlug}>
+                                          <button
+                                            type="button"
+                                            onClick={() => onSelectPlayer(c.playerSlug)}
+                                            className="w-full text-left flex items-center gap-2 p-1.5 rounded bg-ink hover:bg-line/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-flood"
+                                          >
+                                            <span className="font-mono text-[10px] text-muted w-8 shrink-0">
+                                              {POSITION_SHORT[c.position] ?? c.position}
+                                            </span>
+                                            <span className="text-xs truncate flex-1 flex items-center gap-1.5">
+                                              {c.playerName}
+                                              {c.isCaptain && (
+                                                <span className="shrink-0 px-1 rounded bg-flood text-ink text-[9px] font-bold">
+                                                  C
+                                                </span>
+                                              )}
+                                              {isNew && (
+                                                <span className="shrink-0 text-[9px] font-mono text-ok">à ajouter</span>
+                                              )}
+                                            </span>
+                                            <span className="font-mono text-[10px] text-muted shrink-0">
+                                              {one(c.expected)} · titu {pct(c.pStart)}
+                                            </span>
+                                          </button>
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+
+                                  {delta && delta.cardsOut.length > 0 && (
+                                    <p className="font-mono text-[10px] text-warn">
+                                      {delta.cardsOut.length} carte{delta.cardsOut.length > 1 ? "s" : ""} à sortir
+                                    </p>
+                                  )}
+
+                                  {validation && (
+                                    <p
+                                      className={`font-mono text-[10px] ${blocking.length ? "text-warn" : "text-ok"}`}
+                                      title="Verdict renvoyé par Sorare pour cette compo"
+                                    >
+                                      {blocking.length
+                                        ? `Sorare refuse : ${blocking.map((r) => r.message ?? r.ruleName).join(" · ")}`
+                                        : `Validée par Sorare${validation.rewardMultiplier != null ? ` · multiplicateur ×${validation.rewardMultiplier}` : ""}`}
+                                    </p>
+                                  )}
+                                </>
+                              )}
+
+                              <p className="font-mono text-[10px] text-muted">
+                                Vivier : {cards.length} carte{cards.length > 1 ? "s" : ""} éligible
+                                {cards.length > 1 ? "s" : ""}
+                                {lockedCount > 0 && ` · ${lockedCount} déjà engagée${lockedCount > 1 ? "s" : ""}`}
+                              </p>
+                            </div>
+                          );
+                        })()}
 
                         {d.prizePool != null && (
                           <p className="font-mono text-[11px] text-muted">

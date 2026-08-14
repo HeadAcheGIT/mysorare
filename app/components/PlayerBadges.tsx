@@ -15,6 +15,7 @@ export default function PlayerBadges({
   inSeason,
   unavailable,
   covered,
+  engagedInLineup,
 }: {
   birthDate: string | null;
   competitionName?: string | null;
@@ -23,11 +24,21 @@ export default function PlayerBadges({
   unavailable?: boolean;
   /** Whether competitionName is covered by market scouting — undefined skips the warning styling. */
   covered?: boolean;
+  /** Already fielded in a line-up this game week, so not available to pick again. */
+  engagedInLineup?: boolean;
 }) {
   const u23 = u23Status(birthDate);
 
   return (
     <>
+      {engagedInLineup && (
+        <span
+          className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-flood/15 text-flood font-mono"
+          title="Déjà alignée dans une compo cette game week"
+        >
+          en compo
+        </span>
+      )}
       {inSeason !== undefined && !unavailable && (
         inSeason ? (
           <span

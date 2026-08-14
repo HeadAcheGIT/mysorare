@@ -41,6 +41,12 @@ export interface SquadCard {
   /** The club's domestic league/division, from the public API. */
   competitionSlug: string | null;
   competitionName: string | null;
+  /**
+   * Already committed to a live or upcoming line-up on Sorare, so it can't be
+   * fielded again. Only known when signed in — false otherwise, never null,
+   * so the badge simply doesn't show rather than reading as "unknown".
+   */
+  engagedInLineup?: boolean;
   l10: number | null;
   price: number | null;
   floorPrice: number | null;

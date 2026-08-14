@@ -195,6 +195,68 @@ query DivisionEligibility($slug: String!) {
 }`;
 
 /**
+ * The cards from this gallery that can actually be fielded in ONE division —
+ * Sorare's own compose bench, so eligibility is its answer rather than rules
+ * re-implemented here.
+ *
+ * Per division on purpose: a game week exposes ~76 leaderboards, so this is
+ * fetched only when a division is opened, never in bulk.
+ *
+ * `lockedForLeaderboard` is the "already committed" flag that makes a bench
+ * honest — a card sitting in another line-up can't be picked again, and
+ * proposing it would be advice you can't act on. `projectedScore` is Sorare's
+ * projection *for this division*, which is not the same number as its generic
+ * one.
+ */
+export const DIVISION_BENCH = `
+query DivisionBench($lb: String!) {
+  so5 {
+    so5Leaderboard(slug: $lb) {
+      slug
+      myBench(first: 40) {
+        nodes {
+          id
+          position
+          positions
+          rarity
+          bonus
+          projectedScore(so5LeaderboardSlug: $lb)
+          lockedForLeaderboard(so5LeaderboardSlug: $lb)
+          anyPlayer { slug displayName }
+          ... on ComposeTeamBenchCard { anyCard { slug } }
+        }
+      }
+    }
+  }
+}`;
+
+/**
+ * Sorare's own verdict on a proposed line-up. This is what removes the need to
+ * re-implement composition rules: `feedbackRules` names each rule and whether
+ * it passes, so a suggestion is either confirmed valid by Sorare or rejected
+ * with its reason, instead of being trusted because our own model said so.
+ */
+export const PREVIEW_LINEUP = `
+query PreviewLineup($lb: String!, $appearances: [So5AppearanceInput!]!) {
+  so5 {
+    so5Leaderboard(slug: $lb) {
+      previewSo5Lineup(appearances: $appearances) {
+        rewardMultiplier
+        feedbackRules { ruleName state message }
+      }
+    }
+  }
+}`;
+
+/** Card slugs already engaged in a live or upcoming line-up — powers the gallery's "en compo" flag. */
+export const CARDS_IN_LINEUPS = `
+query CardsInLineups {
+  currentUser {
+    blockchainCardsInLineups(sport: FOOTBALL)
+  }
+}`;
+
+/**
  * Spendable balance, for the in-season advisor's "can I afford to close this
  * gap" verdict. `availableBalances` splits cash from crypto: `eurCents` is the
  * fiat wallet, `wei` the ETH one with its own EUR equivalent attached — the

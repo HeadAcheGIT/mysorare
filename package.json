@@ -9,7 +9,8 @@
     "postinstall": "prisma generate",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:queries": "node scripts/validate-queries.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

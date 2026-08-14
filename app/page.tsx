@@ -21,25 +21,6 @@ import PlayerBadges from "./components/PlayerBadges";
 import DivisionBoard from "./components/DivisionBoard";
 import InSeasonAdvisor from "./components/InSeasonAdvisor";
 
-type OptimiseResult = {
-  fixture: string | null;
-  competition: string;
-  projectedTotal?: number;
-  captain?: string | null;
-  error?: string;
-  cards: {
-    cardSlug: string;
-    playerSlug: string;
-    name: string;
-    position: string;
-    club: string | null;
-    expected: number;
-    pStart: number;
-    l15: number | null;
-    isCaptain: boolean;
-  }[];
-};
-
 type SavedLineup = {
   id: number;
   fixture: string;
@@ -50,8 +31,6 @@ type SavedLineup = {
   createdAt: string;
 };
 
-const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
-const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
 const msg = (e: unknown) => (e instanceof ApiFetchError || e instanceof Error ? e.message : "Erreur inattendue");
 
 export default function Page() {
@@ -98,13 +77,10 @@ export default function Page() {
   const [direction, setDirection] = useState<SortDirection>(DEFAULT_DIRECTION.score);
   const [inSeasonOnly, setInSeasonOnly] = useState(false);
 
-  // Line-up
-  const [competitions, setCompetitions] = useState<{ name: string; displayName: string }[]>([]);
-  const [competition, setCompetition] = useState("");
-  const [lineup, setLineup] = useState<OptimiseResult | null>(null);
-  const [building, setBuilding] = useState(false);
+  // Line-up — les compos réelles vivent dans DivisionBoard ; il ne reste ici
+  // que la liste des compos sauvegardées par l'ancien composeur, conservée en
+  // lecture pour ne rien perdre de ce qui avait été enregistré.
   const [savedLineups, setSavedLineups] = useState<SavedLineup[]>([]);
-  const [savingLineup, setSavingLineup] = useState(false);
 
   // History
   type SaleRow = {
@@ -324,16 +300,6 @@ export default function Page() {
     }
   }, []);
 
-  const loadCompetitions = useCallback(async () => {
-    try {
-      const data = await apiFetch<{ name: string; displayName: string }[]>("/api/competitions");
-      setCompetitions(data);
-      setCompetition((c) => c || data[0]?.name || "");
-    } catch (err) {
-      setError(msg(err));
-    }
-  }, []);
-
   // Which leagues the market scouting tab can actually search — used to flag
   // a player's championship badge as "non couvert" when it can't.
   const [coveredLeagues, setCoveredLeagues] = useState<Set<string>>(new Set());
@@ -413,12 +379,11 @@ export default function Page() {
 
   useEffect(() => {
     loadSquad();
-    loadCompetitions();
     loadGameWeek();
     loadInsights();
     loadCoveredLeagues();
     loadAlerts();
-  }, [loadSquad, loadCompetitions, loadGameWeek, loadInsights, loadCoveredLeagues, loadAlerts]);
+  }, [loadSquad, loadGameWeek, loadInsights, loadCoveredLeagues, loadAlerts]);
 
   useEffect(() => {
     if (tab === "settings") {
@@ -457,46 +422,6 @@ export default function Page() {
     });
   }, [squad, search, position, rarity, inSeasonOnly, sort, direction]);
 
-  async function runOptimise() {
-    if (!competition) return;
-    setBuilding(true);
-    try {
-      setLineup(
-        await apiFetch<OptimiseResult>("/api/optimise", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ competition }),
-        })
-      );
-    } catch (err) {
-      setError(msg(err));
-    } finally {
-      setBuilding(false);
-    }
-  }
-
-  async function saveLineup() {
-    if (!lineup || lineup.error || !lineup.fixture) return;
-    setSavingLineup(true);
-    try {
-      await apiFetch("/api/lineups", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          fixture: lineup.fixture,
-          competition: lineup.competition,
-          cardSlugs: lineup.cards.map((c) => c.cardSlug),
-          captain: lineup.cards.find((c) => c.isCaptain)?.cardSlug ?? null,
-          projectedTotal: lineup.projectedTotal ?? 0,
-        }),
-      });
-      await loadSavedLineups(lineup.fixture);
-    } catch (err) {
-      setError(msg(err));
-    } finally {
-      setSavingLineup(false);
-    }
-  }
 
   async function deleteSavedLineup(id: number) {
     try {
@@ -809,92 +734,13 @@ export default function Page() {
 
         {tab === "lineup" && (
           <section aria-label="Composition">
-            <div className="flex gap-2 mb-4">
-              <select
-                value={competition}
-                onChange={(e) => setCompetition(e.target.value)}
-                aria-label="Compétition"
-                className="flex-1 bg-ink border border-line rounded-md px-3 py-2 text-sm"
-              >
-                {competitions.map((c) => (
-                  <option key={c.name} value={c.name}>
-                    {c.displayName}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={runOptimise}
-                disabled={building}
-                className="bg-flood text-ink font-bold px-4 py-2 rounded-md text-sm disabled:opacity-50"
-              >
-                {building ? "…" : "Composer"}
-              </button>
-            </div>
-
-            {lineup?.error && <p className="font-mono text-sm text-muted">{lineup.error}</p>}
-
-            {lineup && !lineup.error && (
-              <>
-                <div className="flex items-center justify-between gap-2 mb-3">
-                  <p className="font-mono text-xs text-muted">
-                    <span className="font-display text-2xl text-flood align-middle">{lineup.projectedTotal}</span> pts
-                    projetés · {lineup.competition}
-                  </p>
-                  <button
-                    onClick={saveLineup}
-                    disabled={savingLineup}
-                    className="shrink-0 text-xs border border-line rounded-md px-2 py-1.5 disabled:opacity-50"
-                  >
-                    {savingLineup ? "…" : "Sauvegarder"}
-                  </button>
-                </div>
-                <ol className="flex flex-col gap-2">
-                  {lineup.cards.map((c) => (
-                    <li key={c.cardSlug}>
-                      <button
-                        type="button"
-                        onClick={() => openPlayer(c.playerSlug)}
-                        className={`w-full text-left grid grid-cols-[40px_1fr_auto] gap-3 items-center p-3 rounded-lg bg-ink2 border border-line border-l-[3px] hover:bg-line/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-flood ${
-                          c.isCaptain ? "border-l-flood" : "border-l-limited"
-                        }`}
-                      >
-                        <span className="font-display text-xs font-bold uppercase text-muted tracking-wider">
-                          {POSITION_SHORT[c.position] ?? c.position}
-                        </span>
-                        <span className="min-w-0 flex flex-col gap-1">
-                          <span className="font-bold truncate">
-                            {c.name}
-                            {c.isCaptain && (
-                              <span className="ml-2 px-1.5 py-0.5 rounded bg-flood text-ink text-[10px] font-bold">C</span>
-                            )}
-                          </span>
-                          <span className="text-xs text-muted truncate">
-                            {c.club ?? "sans club"} · titulaire {pct(c.pStart)} · L15 {one(c.l15)}
-                          </span>
-                          <span className="bar-track max-w-[180px]">
-                            <span
-                              className={`bar-fill ${c.pStart < 0.5 ? "low" : ""}`}
-                              style={{ width: `${c.pStart * 100}%` }}
-                            />
-                          </span>
-                        </span>
-                        <span className="font-display text-3xl font-bold text-right leading-none">
-                          {c.expected}
-                          <small className="block text-[10px] font-mono text-muted font-normal">projeté</small>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-              </>
-            )}
-
-            {!lineup && (
-              <p className="font-mono text-sm text-muted">
-                Choisis une compétition et lance « Composer ». Nécessite des projections calculées.
-              </p>
-            )}
-
+            {/* Le sélecteur de compétitions et le bouton « Composer » ont été
+                retirés : ils tournaient sur quatre compétitions écrites à la
+                main dans lib/services/rules.ts et proposaient donc des compos
+                pour des compétitions qui n'existent pas forcément sur le
+                compte. Les vraies divisions, avec leur vivier réel et une
+                compo proposée validée par Sorare, sont dans DivisionBoard
+                ci-dessous. */}
             {savedLineups.length > 0 && (
               <div className="mt-6">
                 <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">Compos sauvegardées</h2>

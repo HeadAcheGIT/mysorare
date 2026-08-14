@@ -97,6 +97,7 @@ export default function PlayerCard({
               inSeason={card.inSeason}
               unavailable={unavailable}
               covered={covered}
+              engagedInLineup={card.engagedInLineup}
             />
           </p>
 

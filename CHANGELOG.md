@@ -3,6 +3,62 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-14 (soir) — Onglet Compo : le moteur, pas seulement la structure
+
+Retour sans détour : « pourquoi je n'ai pas un reflet exact des divisions
+Sorare, des cartes de ma galerie déjà en line-up, et des compos possibles ? ».
+Réponse honnête : la passe précédente avait livré la **structure** des divisions
+sans jamais la relier à la galerie. L'onglet contenait deux blocs étrangers l'un
+à l'autre — l'ancien « Composer » sur les quatre compétitions inventées de
+`rules.ts`, et le tableau des divisions.
+
+### Le vivier réel, division par division
+
+`so5Leaderboard(slug).myBench` est la liste, établie par Sorare, des cartes de
+la galerie réellement éligibles à **cette** division. Chaque entrée porte
+`lockedForLeaderboard` (déjà engagée ailleurs, donc pas sélectionnable) et
+`projectedScore(so5LeaderboardSlug:)` — la projection Sorare propre à cette
+division, qui n'est pas son chiffre générique.
+
+Chargé **à la demande** en dépliant une division : la game week en cours expose
+76 leaderboards, tout précharger serait lent et gaspillé.
+
+### Compo proposée, validée par Sorare
+
+L'optimiseur LP existant (`optimizer.ts`) tourne désormais sur ce vivier au lieu
+de la galerie filtrée par des règles écrites à la main. Et surtout :
+`previewSo5Lineup` renvoie le verdict règle par règle de Sorare sur la compo
+proposée. **On ne devine plus les règles de compo** — `rules.ts` ne sert plus
+qu'à donner au solveur une forme (cinq cartes, un par poste, un capitaine).
+
+L'écran montre le score projeté, le **delta vs la compo actuelle** (les cartes à
+ajouter, celles à sortir) et le verdict Sorare. Un `gain` n'est calculé que si
+la compo actuelle est chiffrable — sinon il reste nul plutôt que d'inventer un
+écart égal à la totalité de la proposition.
+
+### Cartes déjà engagées, visibles dans la galerie
+
+`currentUser.blockchainCardsInLineups` alimente une pastille « en compo » sur
+les cartes déjà alignées. Non bloquant : sans session Sorare le drapeau reste
+faux, la galerie ne tombe pas.
+
+### Retiré : le composeur sur compétitions fictives
+
+Le sélecteur et le bouton « Composer » proposaient des compos pour des
+compétitions qui n'existent pas forcément sur le compte. Supprimés, avec l'état
+mort qui allait avec. Les compos sauvegardées restent consultables.
+
+### Un vivier qui échoue le dit
+
+Même leçon que les amicaux : quand le chargement du vivier échoue (typiquement
+pas de session Sorare), la division affiche la raison au lieu de ne rien rendre.
+
+### `npm run test:queries`
+
+Le script qui avait débusqué trois requêtes mortes rejoint le repo. Il poste
+chaque document GraphQL à l'API et distingue une erreur d'auth (forme valide)
+d'un champ absent ou d'un dépassement de complexité. 16 documents, tous valides.
+
 ## 2026-08-14 — L'app reflète enfin le vrai Sorare (divisions, amicaux, analyse in-season)
 
 Demande : voir les joueurs alignés par GW et les confronter aux % de
