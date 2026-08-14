@@ -19,7 +19,18 @@ export interface SquadCard {
   clubPicture: string | null;
   injury: string | null;
   suspended: boolean;
+  /** Probability of being in the starting XI — read `pStartBasis` before labelling it. */
   pStart: number | null;
+  /** Probability of appearing at all, starter or substitute. */
+  pPlay: number | null;
+  /**
+   * What pStart is built from. "starts" means real starting-XI history;
+   * "appearances" means it's standing in for p(plays) and overstates starting;
+   * "baseline" means position prior only.
+   */
+  pStartBasis: "starts" | "appearances" | "baseline" | null;
+  /** Sorare's own starter probability, when its data partner has published one. */
+  sorareStarterOdds: number | null;
   confidence: number | null;
   expected: number | null;
   floor: number | null;

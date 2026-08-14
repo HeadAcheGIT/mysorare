@@ -1,7 +1,11 @@
 import { Prisma } from "@prisma/client";
+import { config } from "../config";
 import { prisma } from "../prisma";
 import { publicGraphql, OPEN_FIXTURES_PUBLIC } from "../sorare/publicClient";
-import { projectFromPublic } from "./publicProjection";
+import { projectFromPublic, recencyWeightedStartRate } from "./publicProjection";
+
+/** Same window as the appearance counts the public API gives, so both signals cover the same period. */
+const FORM_WINDOW = config.formWindow;
 
 /**
  * Game-week sync and projection, both running off the public API so they work
@@ -64,11 +68,30 @@ export async function recomputeFromPublic(fixtureSlug: string): Promise<number> 
   // and score it 0 with a "sans club" note — wrong, and indistinguishable from
   // a real assessment. No projection at all is the honest answer, and the UI
   // falls back to Sorare's own number or the CSV average.
-  const [players, cards] = await Promise.all([
+  const [players, cards, appearances] = await Promise.all([
     prisma.player.findMany({ where: { enrichedAt: { not: null } } }),
     prisma.card.findMany(),
+    // Real per-game history — this is what turns "titularisation" from an
+    // appearance rate into an actual starting rate. Public since PLAYER_FORM
+    // moved to `anyPlayer`, so it's available without a Sorare login; a
+    // gallery that has never run the form sync simply has none and the
+    // projection falls back, flagged via pStartBasis.
+    prisma.appearance.findMany({
+      where: { friendly: false },
+      orderBy: { gameDate: "desc" },
+      select: { playerSlug: true, started: true, gameDate: true },
+    }),
   ]);
   if (!players.length) return 0;
+
+  const startsByPlayer = new Map<string, { started: boolean }[]>();
+  for (const a of appearances) {
+    const list = startsByPlayer.get(a.playerSlug);
+    // Newest first (the query orders by date desc), capped at the same window
+    // the appearance counts use so the two signals describe the same period.
+    if (!list) startsByPlayer.set(a.playerSlug, [{ started: a.started }]);
+    else if (list.length < FORM_WINDOW) list.push({ started: a.started });
+  }
 
   // Best bonus among the cards owned for that player, so the projection
   // reflects the card you'd actually field.
@@ -88,6 +111,11 @@ export async function recomputeFromPublic(fixtureSlug: string): Promise<number> 
       recent = [];
     }
 
+    const starts = recencyWeightedStartRate(
+      startsByPlayer.get(p.slug) ?? [],
+      config.recencyHalflife
+    );
+
     const form = projectFromPublic({
       position: p.position,
       app5: p.app5,
@@ -101,6 +129,8 @@ export async function recomputeFromPublic(fixtureSlug: string): Promise<number> 
       suspended: p.suspended,
       hasClub: Boolean(p.clubSlug),
       cardBonus: bonusByPlayer.get(p.slug) ?? 0,
+      startRate: starts?.rate ?? null,
+      startSample: starts?.sample ?? 0,
     });
 
     return { playerSlug: p.slug, form };
@@ -116,17 +146,21 @@ export async function recomputeFromPublic(fixtureSlug: string): Promise<number> 
   for (let i = 0; i < rows.length; i += CHUNK) {
     const values = rows.slice(i, i + CHUNK).map(({ playerSlug, form }) => {
       const p = playerBySlug.get(playerSlug);
-      return Prisma.sql`(${playerSlug}, ${fixtureSlug}, ${form.pStart},
-        ${form.confidence}, ${form.expected}, ${form.floor}, ${form.l5}, ${form.l15},
-        ${form.note || null}, ${now}, ${p?.sorareStarterOdds ?? null}, ${p?.sorareOddsProviderName ?? null})`;
+      return Prisma.sql`(${playerSlug}, ${fixtureSlug}, ${form.pStart}, ${form.pPlay},
+        ${form.pStartBasis}, ${form.confidence}, ${form.expected}, ${form.floor},
+        ${form.l5}, ${form.l15}, ${form.note || null}, ${now},
+        ${p?.sorareStarterOdds ?? null}, ${p?.sorareOddsProviderName ?? null})`;
     });
     await prisma.$executeRaw`
-      INSERT INTO "Projection" ("playerSlug", "fixtureSlug", "pStart", "confidence",
-                                "expectedScore", "floorScore", "l5", "l15", "note", "computedAt",
+      INSERT INTO "Projection" ("playerSlug", "fixtureSlug", "pStart", "pPlay", "pStartBasis",
+                                "confidence", "expectedScore", "floorScore", "l5", "l15",
+                                "note", "computedAt",
                                 "sorareStarterOdds", "sorareOddsProviderName")
       VALUES ${Prisma.join(values)}
       ON CONFLICT ("playerSlug", "fixtureSlug") DO UPDATE SET
         "pStart"                 = EXCLUDED."pStart",
+        "pPlay"                  = EXCLUDED."pPlay",
+        "pStartBasis"            = EXCLUDED."pStartBasis",
         "confidence"             = EXCLUDED."confidence",
         "expectedScore"          = EXCLUDED."expectedScore",
         "floorScore"             = EXCLUDED."floorScore",

@@ -5,11 +5,11 @@ import Sparkline from "./Sparkline";
 import MatchList from "./MatchList";
 import PlayerNews from "./PlayerNews";
 import PlayerBadges from "./PlayerBadges";
+import StartProbability from "./StartProbability";
 import { POSITION_LABEL, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
 
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
 const eur = (v: number | null) => (v == null ? "—" : `${v.toFixed(2)} €`);
-const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" | "neutral" }) {
   return (
@@ -109,10 +109,24 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
             <Stat label="Projeté" value={one(card.expected)} tone={scoreColor(card.expected)} />
             <Stat label="Sorare" value={one(card.sorareProjection)} tone={scoreColor(card.sorareProjection)} />
             <Stat label="L10" value={one(card.l10)} tone={scoreColor(card.l10)} />
-            <Stat label="Titulaire" value={pct(card.pStart)} />
+            <StartProbability
+              pStart={card.pStart}
+              basis={card.pStartBasis}
+              sorareOdds={card.sorareStarterOdds}
+            />
             <Stat label="L5" value={one(card.l5)} tone={scoreColor(card.l5)} />
             <Stat label="L15" value={one(card.l15)} tone={scoreColor(card.l15)} />
           </div>
+
+          {/* Only worth showing next to the starting probability, and only when
+              the two actually differ — for a nailed-on starter they're the
+              same number and the extra line is noise. */}
+          {card.pPlay != null && card.pStart != null && card.pPlay - card.pStart >= 0.1 && (
+            <p className="font-mono text-[11px] text-muted">
+              Entre en jeu {Math.round(card.pPlay * 100)}% du temps, titulaire{" "}
+              {Math.round(card.pStart * 100)}% — souvent utilisé en remplaçant.
+            </p>
+          )}
 
           <div>
             <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">Marché</p>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import { POSITION_SHORT } from "@/lib/types";
+import { startLabel, type PStartBasis } from "./StartProbability";
 
 type FixtureRow = {
   slug: string;
@@ -21,6 +22,7 @@ type ComparisonRow = {
   captain: boolean;
   position: string | null;
   ourPStart: number | null;
+  ourPStartBasis: PStartBasis;
   sorareStarterOdds: number | null;
   sorareOddsProviderIconUrl: string | null;
   actualScore: number | null;
@@ -474,14 +476,23 @@ export default function DivisionBoard({
                                     </span>
                                     <span className="text-right shrink-0 font-mono text-[10px]">
                                       <span className="block">
-                                        Nous <span className="text-flood">{pct(r.ourPStart)}</span>
+                                        {startLabel(r.ourPStartBasis)}{" "}
+                                        <span className="text-flood">{pct(r.ourPStart)}</span>
                                       </span>
                                       <span className="flex items-center gap-1 justify-end">
                                         {r.sorareOddsProviderIconUrl && (
                                           // eslint-disable-next-line @next/next/no-img-element -- remote provider icon
                                           <img src={r.sorareOddsProviderIconUrl} alt="" className="w-2.5 h-2.5" />
                                         )}
-                                        Sorare <span className="text-muted">{pct(r.sorareStarterOdds)}</span>
+                                        {r.sorareStarterOdds != null ? (
+                                          <>
+                                            Sorare <span className="text-muted">{pct(r.sorareStarterOdds)}</span>
+                                          </>
+                                        ) : (
+                                          <span className="text-muted/70" title="Sorare n'a pas publié de cote pour ce match">
+                                            Sorare n.d.
+                                          </span>
+                                        )}
                                       </span>
                                       {r.actualStarted != null && (
                                         <span className={`block ${r.actualStarted ? "text-ok" : "text-warn"}`}>
@@ -580,7 +591,7 @@ export default function DivisionBoard({
                                               )}
                                             </span>
                                             <span className="font-mono text-[10px] text-muted shrink-0">
-                                              {one(c.expected)} · titu {pct(c.pStart)}
+                                              {one(c.expected)} · {pct(c.pStart)}
                                             </span>
                                           </button>
                                         </li>

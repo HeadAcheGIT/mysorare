@@ -298,7 +298,12 @@ query PlayerForm($slug: String!, $last: Int!) {
       nodes {
         score
         anyPlayerGameStats {
-          ... on PlayerGameStats { minsPlayed onGameSheet }
+          # formationPlace is the only reliable "did he start": non-zero means
+          # he was in the starting XI. Verified against real data — a starter
+          # subbed at half time has minsPlayed 45 and formationPlace 11, while
+          # a one-minute substitute has minsPlayed 1 and formationPlace 0. Any
+          # minutes-based rule gets both of those wrong.
+          ... on PlayerGameStats { minsPlayed onGameSheet formationPlace }
         }
         anyGame { id date competition { displayName } }
       }

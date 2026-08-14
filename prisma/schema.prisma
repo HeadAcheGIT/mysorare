@@ -122,16 +122,26 @@ model Fixture {
 }
 
 model Appearance {
-  id          Int       @id @default(autoincrement())
-  playerSlug  String
-  player      Player    @relation(fields: [playerSlug], references: [slug])
-  gameId      String
-  gameDate    DateTime?
-  competition String?
-  minutes     Int       @default(0)
-  started     Boolean   @default(false)
-  onGameSheet Boolean   @default(false)
-  score       Float?
+  id             Int       @id @default(autoincrement())
+  playerSlug     String
+  player         Player    @relation(fields: [playerSlug], references: [slug])
+  gameId         String
+  gameDate       DateTime?
+  competition    String?
+  minutes        Int       @default(0)
+  /// Whether the player was in the starting XI. Derived from formationPlace
+  /// when it's known (see below), which is the only reliable answer — the old
+  /// `minutes >= 60` proxy got it wrong in both directions: it missed starters
+  /// subbed at half time and, on the appearance-count model, counted a
+  /// one-minute cameo as a full start.
+  started        Boolean   @default(false)
+  /// Place in the starting formation, from PlayerGameStats.formationPlace.
+  /// Non-zero means the player started; 0 means bench or unused. Null when the
+  /// row predates this field or came from a source that doesn't carry it
+  /// (API-Football friendlies), in which case `started` falls back to minutes.
+  formationPlace Int?
+  onGameSheet    Boolean   @default(false)
+  score          Float?
 
   /// Club friendlies (pre-season) come from API-Football, not Sorare — see
   /// lib/services/friendlies.ts. Sorare's public API carries international
@@ -164,6 +174,20 @@ model Projection {
   gamesInWeek   Int      @default(1)
   note          String?
   computedAt    DateTime @default(now())
+
+  /// Probability of appearing at all, starter or off the bench. Kept separate
+  /// from pStart because they answer different questions and are needed for
+  /// different things: expectedScore is driven by pPlay (a substitute still
+  /// scores), while pStart is what a manager reads as "titulaire". Collapsing
+  /// the two is what made the old numbers wrong.
+  pPlay       Float?
+  /// What pStart actually measures, so the UI can say so instead of labelling
+  /// everything "titulaire":
+  ///   "starts"      — real per-game starting XI data (Appearance.formationPlace)
+  ///   "appearances" — no per-game history yet, so this is p(plays at all)
+  ///                   standing in for p(starts) and overstating it
+  ///   "baseline"    — no history at all, position prior only
+  pStartBasis String @default("appearances")
 
   /// Snapshot of Player.sorareStarterOdds/sorareOddsProviderName at the time
   /// this row was computed — unlike the Player copy (overwritten every sync),

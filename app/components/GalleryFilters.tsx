@@ -16,7 +16,10 @@ const POSITIONS = [
 const SORTS: [SortKey, string][] = [
   ["score", "Score"],
   ["form", "Forme"],
-  ["titu", "% Titu"],
+  // Not "% Titu": depending on what has been synced this is either a starting
+  // rate or a participation rate (see Projection.pStartBasis), and the card
+  // itself says which. A neutral label can't be wrong.
+  ["titu", "Probabilité"],
   ["price", "Valeur"],
   ["name", "Nom"],
   ["u23", "U23"],

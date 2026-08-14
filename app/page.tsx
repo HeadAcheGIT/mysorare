@@ -182,6 +182,7 @@ export default function Page() {
   const [syncing, setSyncing] = useState(false);
   const [checkingLineups, setCheckingLineups] = useState(false);
   const [syncingFriendlies, setSyncingFriendlies] = useState(false);
+  const [syncingForm, setSyncingForm] = useState(false);
   const [notice, setNotice] = useState("");
 
   // Market
@@ -501,6 +502,52 @@ export default function Page() {
       setError(msg(err));
     } finally {
       setCheckingLineups(false);
+    }
+  }
+
+  /**
+   * Pulls per-game history so the starting probability can be built from real
+   * compositions instead of appearance counts, which can't tell a substitute
+   * from a starter. Public since PLAYER_FORM moved to `anyPlayer`, so no
+   * Sorare login is needed.
+   *
+   * One API call per player against a 20/min unauthenticated limit, so a large
+   * gallery takes a while — the loop is resumable via its cursor, and stopping
+   * early just means fewer players upgraded, never corrupt data.
+   */
+  async function syncForm() {
+    setSyncingForm(true);
+    setNotice("");
+    try {
+      let cursor = 0;
+      let guard = 0;
+      for (;;) {
+        const batch = await apiFetch<{
+          status: string;
+          detail?: string;
+          processed: number;
+          nextCursor: number | null;
+          total: number;
+        }>("/api/sync/batch", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ cursor }),
+        });
+        if (batch.status === "error") throw new Error(batch.detail ?? "Erreur de synchronisation");
+        setNotice(`Compositions : ${Math.min(cursor + batch.processed, batch.total)}/${batch.total} joueurs`);
+        if (batch.nextCursor == null) break;
+        cursor = batch.nextCursor;
+        if (++guard > 400) break;
+      }
+      // Projections have to be recomputed for the new start data to reach the UI.
+      const gw = await apiFetch<{ fixture: string | null; updated: number }>("/api/gameweek", { method: "POST" });
+      await refreshAll();
+      await loadLogs();
+      setNotice(`Compositions synchronisées — ${gw.updated} projections recalculées.`);
+    } catch (err) {
+      setError(msg(err));
+    } finally {
+      setSyncingForm(false);
     }
   }
 
@@ -1180,6 +1227,20 @@ export default function Page() {
             <p className="font-mono text-xs text-muted">
               Récupère photos, clubs, blessures et scores récents depuis l&apos;API publique Sorare. Aucune
               connexion requise.
+            </p>
+
+            <button
+              onClick={syncForm}
+              disabled={syncingForm}
+              className="w-full border border-line font-bold py-3 rounded-md text-sm disabled:opacity-50"
+            >
+              {syncingForm ? "Synchronisation…" : "Synchroniser les compositions"}
+            </button>
+            <p className="font-mono text-xs text-muted">
+              Récupère la composition de chaque match passé — c&apos;est ce qui permet de distinguer un
+              titulaire d&apos;un remplaçant. Sans ça, la probabilité affichée est un taux de participation
+              (« joue »), pas une titularisation. Aucune connexion requise, mais compte ~1 requête par joueur
+              sur les 20/min publiques : c&apos;est long sur une grosse galerie, et reprenable à tout moment.
             </p>
 
             <button

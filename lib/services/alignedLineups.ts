@@ -102,6 +102,8 @@ export interface ComparisonRow {
   division: number | null;
   /** Our own model's pStart at computation time, from Projection. */
   ourPStart: number | null;
+  /** What ourPStart measures — see Projection.pStartBasis. Drives the label, so "titulaire" is never claimed for an appearance rate. */
+  ourPStartBasis: "starts" | "appearances" | "baseline" | null;
   /** Sorare's own starter odds (via its data partner) at computation time. */
   sorareStarterOdds: number | null;
   sorareOddsProviderName: string | null;
@@ -169,6 +171,7 @@ export async function alignedLineupComparison(fixtureSlug: string): Promise<Divi
       leaderboardName: row.leaderboardName,
       division: row.division,
       ourPStart,
+      ourPStartBasis: (proj?.pStartBasis as ComparisonRow["ourPStartBasis"]) ?? null,
       sorareStarterOdds,
       sorareOddsProviderName: proj?.sorareOddsProviderName ?? null,
       sorareOddsProviderIconUrl: player?.sorareOddsProviderIconUrl ?? null,

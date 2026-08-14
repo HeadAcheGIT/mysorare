@@ -155,7 +155,12 @@ export async function buildInsights(
       underused.push({
         ...common,
         kind: "underused",
-        reason: `${p.app15}/15 matchs · moyenne ${(p.avgL10Played ?? 0).toFixed(0)} · titu ${pct(proj?.pStart ?? null)}`,
+        // Same rule as the UI: only call it "titu" when it came from real
+        // starting-XI data, otherwise it's a participation rate (see
+        // Projection.pStartBasis).
+        reason: `${p.app15}/15 matchs · moyenne ${(p.avgL10Played ?? 0).toFixed(0)} · ${
+          proj?.pStartBasis === "starts" ? "titu" : "joue"
+        } ${pct(proj?.pStart ?? null)}`,
         weight: (p.avgL10Played ?? 0) * (playRate ?? 0),
       });
     }

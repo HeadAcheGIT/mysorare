@@ -3,6 +3,61 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-15 — Les probabilités de titularisation étaient fausses
+
+« J'ai cru voir que les probabilités sont pas OK ». Elles ne l'étaient pas, et
+la cause est nette.
+
+### Le bug
+
+`pStart` était calculé depuis `lastFiveSo5Appearances` / `lastFifteenSo5Appearances`
+— des compteurs d'**apparitions**, pas de titularisations. Un remplaçant entré
+une minute compte comme une apparition pleine, donc un joueur qui entre en jeu
+chaque semaine sans jamais démarrer affichait « titu 100% ».
+
+Le second modèle (`computeForm`) n'allait pas mieux : `started` valait
+`minutes >= 60`, et il était OR-é avec le drapeau stocké. Résultat, un
+titulaire sorti à la mi-heure n'était pas compté comme titulaire, tandis qu'un
+remplaçant entré tôt l'était.
+
+Et les deux modèles écrivaient dans le même champ avec des sémantiques
+différentes : le cron quotidien utilisait le premier, le bouton « recalculer »
+le second.
+
+### La correction
+
+`PlayerGameStats.formationPlace` tranche proprement — non nul = onze de départ.
+Vérifié sur des données réelles : un titulaire sorti à la mi-temps affiche
+`minsPlayed 45 / formationPlace 11`, un entrant d'une minute
+`minsPlayed 1 / formationPlace 0`. Les deux cas que l'ancienne règle ratait.
+
+`pStart` (titularisation) et `pPlay` (entre en jeu) sont désormais deux
+grandeurs distinctes. Le score projeté s'appuie sur `pPlay` — un remplaçant
+marque aussi, le faire dépendre de la titularisation sous-évaluerait tous les
+joueurs de rotation. `pStart` ne peut jamais dépasser `pPlay`.
+
+### L'app ne prétend plus savoir ce qu'elle ignore
+
+`Projection.pStartBasis` dit d'où vient le chiffre, et l'UI suit : « titu »
+seulement quand la vraie composition est connue, « joue » quand seule la
+participation l'est, « est. » quand il n'y a que le poste. Là où Sorare n'a
+publié aucune cote, c'est écrit, au lieu d'un tiret à interpréter.
+
+### Ce que ça débloque
+
+La synchro de forme tournait sur le client authentifié et **n'était appelée par
+aucun bouton** — donc la vraie donnée de composition n'arrivait jamais. Elle
+passe sur le client public (`anyPlayer`) et gagne son bouton dans Données.
+
+Au passage : `Player.sorareStarterOdds` était stocké mais n'apparaissait nulle
+part hors du tableau des divisions ; il est maintenant sur la carte et la fiche
+joueur, à côté du nôtre.
+
+### Tests
+
+Il n'existait aucun test sur le calcul de probabilité, ce qui explique que le
+bug ait survécu. 27 ajoutés, dont les deux cas réels ci-dessus.
+
 ## 2026-08-14 (soir) — Onglet Compo : le moteur, pas seulement la structure
 
 Retour sans détour : « pourquoi je n'ai pas un reflet exact des divisions

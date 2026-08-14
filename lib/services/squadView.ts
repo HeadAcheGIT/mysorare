@@ -90,6 +90,13 @@ export async function getSquadView(
         injury: p.injuryStatus,
         suspended: p.suspended,
         pStart: ov?.pStart ?? proj?.pStart ?? null,
+        pPlay: proj?.pPlay ?? null,
+        // A manual override replaces the number but not its meaning, so the
+        // basis stays whatever the model computed — except that an overridden
+        // value is a human read on starting, which is exactly what "starts"
+        // claims, so it is not downgraded either.
+        pStartBasis: (proj?.pStartBasis as SquadCard["pStartBasis"]) ?? null,
+        sorareStarterOdds: proj?.sorareStarterOdds ?? p.sorareStarterOdds ?? null,
         confidence: proj?.confidence ?? null,
         expected: ov?.expectedScore ?? proj?.expectedScore ?? null,
         floor: proj?.floorScore ?? null,

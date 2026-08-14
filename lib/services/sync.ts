@@ -6,8 +6,10 @@
  * so it's chunked: `syncFormBatch` processes a handful of players per call
  * and returns a cursor, and the client (or the cron route) loops until done.
  */
+import { config } from "../config";
 import { prisma } from "../prisma";
 import { graphql, paginate } from "../sorare/client";
+import { publicGraphql } from "../sorare/publicClient";
 import { MY_CARDS, OPEN_FIXTURES, PLAYER_FORM } from "../sorare/queries";
 import { computeForm } from "./projections";
 import { aggregateSources, congestionReading, type SourceReading } from "./sourceAggregation";
@@ -108,7 +110,34 @@ export async function syncSquadAndFixtures(): Promise<{ cards: number; fixture: 
   return { cards: count, fixture: current };
 }
 
-/** Processes up to FORM_BATCH_SIZE players starting at `cursor` (offset into an alphabetised slug list). */
+/**
+ * Was this player in the starting XI?
+ *
+ * `formationPlace` is the answer when Sorare gives it: non-zero means the
+ * starting formation. Checked against real data — a starter subbed at half
+ * time reads minsPlayed 45 / formationPlace 11, a one-minute substitute reads
+ * minsPlayed 1 / formationPlace 0 — so the old `minutes >= 60` rule was wrong
+ * in both directions, under-counting early-subbed starters and (on the
+ * appearance-count model) treating cameos as full starts.
+ *
+ * The minutes heuristic survives only as a fallback for rows with no
+ * formationPlace at all, such as API-Football friendlies.
+ */
+export function didStart(formationPlace: number | null | undefined, minutes: number): boolean {
+  if (formationPlace != null) return formationPlace > 0;
+  return minutes >= config.startMinutesThreshold;
+}
+
+/**
+ * Processes up to FORM_BATCH_SIZE players starting at `cursor` (offset into an
+ * alphabetised slug list).
+ *
+ * Runs on the PUBLIC client: PLAYER_FORM was rebuilt on `anyPlayer`, which
+ * needs no token. That matters beyond convenience — real per-game starting
+ * data is now available without a Sorare login, so the start probability can
+ * be built from actual starts rather than from appearance counts that can't
+ * tell a substitute from a starter.
+ */
 export async function syncFormBatch(
   cursor: number
 ): Promise<{ processed: number; nextCursor: number | null; total: number }> {
@@ -117,33 +146,27 @@ export async function syncFormBatch(
 
   for (const { slug } of slice) {
     try {
-      const data = await graphql<any>(PLAYER_FORM, { slug, last: 15 });
+      const data = await publicGraphql<any>(PLAYER_FORM, { slug, last: 15 });
       const scores = data?.anyPlayer?.allPlayerGameScores?.nodes ?? [];
       for (const entry of scores) {
         const stats = entry.anyPlayerGameStats;
         const game = entry.anyGame;
         if (!game?.id) continue;
-        const minutes = stats.minsPlayed ?? 0;
+        const minutes = stats?.minsPlayed ?? 0;
+        const formationPlace = stats?.formationPlace ?? null;
+        const row = {
+          gameDate: parseDate(game.date),
+          competition: game.competition?.displayName ?? null,
+          minutes,
+          formationPlace,
+          started: didStart(formationPlace, minutes),
+          onGameSheet: Boolean(stats?.onGameSheet),
+          score: entry.score ?? null,
+        };
         await prisma.appearance.upsert({
           where: { playerSlug_gameId: { playerSlug: slug, gameId: game.id } },
-          create: {
-            playerSlug: slug,
-            gameId: game.id,
-            gameDate: parseDate(game.date),
-            competition: game.competition?.displayName ?? null,
-            minutes,
-            started: minutes >= 60,
-            onGameSheet: Boolean(stats.onGameSheet),
-            score: entry.score ?? null,
-          },
-          update: {
-            gameDate: parseDate(game.date),
-            competition: game.competition?.displayName ?? null,
-            minutes,
-            started: minutes >= 60,
-            onGameSheet: Boolean(stats.onGameSheet),
-            score: entry.score ?? null,
-          },
+          create: { playerSlug: slug, gameId: game.id, ...row },
+          update: row,
         });
       }
     } catch (err) {
@@ -181,7 +204,12 @@ export async function recomputeProjections(fixtureSlug: string): Promise<number>
     const card = cardByPlayer.get(player.slug);
 
     const form = computeForm(
-      appearances.map((a) => ({ minutes: a.minutes, started: a.started, score: a.score })),
+      appearances.map((a) => ({
+        minutes: a.minutes,
+        started: a.started,
+        score: a.score,
+        formationPlace: a.formationPlace,
+      })),
       player.position,
       injured,
       player.suspended,
@@ -244,6 +272,8 @@ export async function recomputeProjections(fixtureSlug: string): Promise<number>
         playerSlug: player.slug,
         fixtureSlug,
         pStart: agg.pStart,
+        pPlay: form.pPlay,
+        pStartBasis: form.pStartBasis,
         confidence: agg.confidence,
         expectedScore: form.expected,
         floorScore: form.floor,
@@ -255,6 +285,8 @@ export async function recomputeProjections(fixtureSlug: string): Promise<number>
       },
       update: {
         pStart: agg.pStart,
+        pPlay: form.pPlay,
+        pStartBasis: form.pStartBasis,
         confidence: agg.confidence,
         expectedScore: form.expected,
         floorScore: form.floor,

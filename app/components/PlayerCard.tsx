@@ -3,9 +3,9 @@
 import Sparkline from "./Sparkline";
 import AlertBadges, { type PlayerAlert } from "./AlertBadges";
 import PlayerBadges from "./PlayerBadges";
+import StartProbability from "./StartProbability";
 import { POSITION_SHORT, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
 
-const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
 const eur = (v: number | null) => (v == null ? "—" : `${v.toFixed(2)} €`);
 
@@ -103,9 +103,16 @@ export default function PlayerCard({
 
           <div className="flex items-center gap-3 mt-1.5">
             <Sparkline scores={card.recentScores} lastPlayedAt={card.lastPlayedAt} />
-            <span className="font-mono text-[11px] text-muted">
-              {card.pStart != null ? `titu ${pct(card.pStart)}` : eur(card.floorPrice)}
-            </span>
+            {card.pStart != null ? (
+              <StartProbability
+                compact
+                pStart={card.pStart}
+                basis={card.pStartBasis}
+                sorareOdds={card.sorareStarterOdds}
+              />
+            ) : (
+              <span className="font-mono text-[11px] text-muted">{eur(card.floorPrice)}</span>
+            )}
           </div>
         </div>
 

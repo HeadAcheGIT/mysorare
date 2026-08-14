@@ -20,15 +20,37 @@ export interface AppearanceLike {
   minutes: number;
   started: boolean;
   score: number | null;
+  /**
+   * Place in the starting formation, when known. Non-zero means the player was
+   * in the starting XI; 0 means bench. Null for rows from a source that
+   * doesn't carry it, where the minutes heuristic is the only option left.
+   */
+  formationPlace?: number | null;
 }
 
 export interface Form {
   pStart: number;
+  /** Probability of appearing at all — a substitute still scores, so this is what expected leans on. */
+  pPlay: number;
+  /** "starts" when real starting-XI data backed pStart, "appearances" when only minutes did. */
+  pStartBasis: "starts" | "appearances" | "baseline";
   expected: number;
   floor: number;
   l5: number | null;
   l15: number | null;
   note: string;
+}
+
+/**
+ * Trusts formationPlace when it's there and only then falls back to minutes.
+ *
+ * The previous rule OR-ed the two, which promoted any substitute who happened
+ * to play an hour into a "starter" and so inflated every rotation player's
+ * starting probability.
+ */
+export function startedFrom(a: AppearanceLike): boolean {
+  if (a.formationPlace != null) return a.formationPlace > 0;
+  return a.started || a.minutes >= config.startMinutesThreshold;
 }
 
 function weight(rank: number): number {
@@ -52,6 +74,8 @@ export function computeForm(
     const expected = (p * base.start + (1 - p) * base.bench) * (1 + cardBonus) * gamesInWeek;
     return {
       pStart: p,
+      pPlay: p,
+      pStartBasis: "baseline",
       expected: round(expected),
       floor: round(base.bench * (1 + cardBonus)),
       l5: null,
@@ -63,14 +87,15 @@ export function computeForm(
   const window = appearancesNewestFirst.slice(0, config.formWindow);
   let wTotal = 0;
   let wStart = 0;
+  let wPlay = 0;
   const startScores: [number, number][] = [];
   const benchScores: [number, number][] = [];
 
   window.forEach((a, rank) => {
     const w = weight(rank);
     wTotal += w;
-    const started = a.started || a.minutes >= config.startMinutesThreshold;
-    if (started) {
+    if (a.minutes > 0) wPlay += w;
+    if (startedFrom(a)) {
       wStart += w;
       if (a.score != null) startScores.push([w, a.score]);
     } else if (a.score != null) {
@@ -80,6 +105,8 @@ export function computeForm(
 
   const rawP = wTotal ? wStart / wTotal : base.pStart;
   let pStart = (wStart + PRIOR_WEIGHT * base.pStart) / (wTotal + PRIOR_WEIGHT);
+  let pPlay = (wPlay + PRIOR_WEIGHT * base.pStart) / (wTotal + PRIOR_WEIGHT);
+  const pStartBasis = window.some((a) => a.formationPlace != null) ? "starts" : "appearances";
 
   const wmean = (pairs: [number, number][], fallback: number) => {
     if (!pairs.length) return fallback;
@@ -93,12 +120,17 @@ export function computeForm(
 
   if (injured) {
     pStart = 0;
+    pPlay = 0;
     notes.push("Injured — excluded from the model");
   }
   if (suspended) {
     pStart = 0;
+    pPlay = 0;
     notes.push("Suspended");
   }
+  // Starting implies playing; a thin start sample against a longer appearance
+  // record must never invert the two.
+  pStart = Math.min(pStart, pPlay);
   if (pStart > 0 && window.length < 5) notes.push(`Thin sample (${window.length} games)`);
   if (rawP > 0.85 && pStart < rawP) notes.push("Nailed-on starter, shrunk for sample size");
 
@@ -113,6 +145,8 @@ export function computeForm(
 
   return {
     pStart: round(pStart, 3),
+    pPlay: round(pPlay, 3),
+    pStartBasis,
     expected: round(expected),
     floor: round(floor),
     l5: l5 != null ? round(l5) : null,
