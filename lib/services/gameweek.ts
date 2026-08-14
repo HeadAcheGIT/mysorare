@@ -110,26 +110,32 @@ export async function recomputeFromPublic(fixtureSlug: string): Promise<number> 
   // statements of a transaction sequentially, so ~400 upserts meant ~400 round
   // trips to a database that may sit on another continent — slow enough to
   // exhaust the function's time budget and return a 504.
+  const playerBySlug = new Map(players.map((p) => [p.slug, p]));
+
   const CHUNK = 250;
   for (let i = 0; i < rows.length; i += CHUNK) {
-    const values = rows.slice(i, i + CHUNK).map(
-      ({ playerSlug, form }) => Prisma.sql`(${playerSlug}, ${fixtureSlug}, ${form.pStart},
+    const values = rows.slice(i, i + CHUNK).map(({ playerSlug, form }) => {
+      const p = playerBySlug.get(playerSlug);
+      return Prisma.sql`(${playerSlug}, ${fixtureSlug}, ${form.pStart},
         ${form.confidence}, ${form.expected}, ${form.floor}, ${form.l5}, ${form.l15},
-        ${form.note || null}, ${now})`
-    );
+        ${form.note || null}, ${now}, ${p?.sorareStarterOdds ?? null}, ${p?.sorareOddsProviderName ?? null})`;
+    });
     await prisma.$executeRaw`
       INSERT INTO "Projection" ("playerSlug", "fixtureSlug", "pStart", "confidence",
-                                "expectedScore", "floorScore", "l5", "l15", "note", "computedAt")
+                                "expectedScore", "floorScore", "l5", "l15", "note", "computedAt",
+                                "sorareStarterOdds", "sorareOddsProviderName")
       VALUES ${Prisma.join(values)}
       ON CONFLICT ("playerSlug", "fixtureSlug") DO UPDATE SET
-        "pStart"        = EXCLUDED."pStart",
-        "confidence"    = EXCLUDED."confidence",
-        "expectedScore" = EXCLUDED."expectedScore",
-        "floorScore"    = EXCLUDED."floorScore",
-        "l5"            = EXCLUDED."l5",
-        "l15"           = EXCLUDED."l15",
-        "note"          = EXCLUDED."note",
-        "computedAt"    = EXCLUDED."computedAt"
+        "pStart"                 = EXCLUDED."pStart",
+        "confidence"             = EXCLUDED."confidence",
+        "expectedScore"          = EXCLUDED."expectedScore",
+        "floorScore"             = EXCLUDED."floorScore",
+        "l5"                     = EXCLUDED."l5",
+        "l15"                    = EXCLUDED."l15",
+        "note"                   = EXCLUDED."note",
+        "computedAt"             = EXCLUDED."computedAt",
+        "sorareStarterOdds"      = EXCLUDED."sorareStarterOdds",
+        "sorareOddsProviderName" = EXCLUDED."sorareOddsProviderName"
     `;
   }
 

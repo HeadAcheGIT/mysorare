@@ -74,6 +74,15 @@ export const PLAYERS_PER_QUERY = 15;
 // it resolves on the type actually returned here. The interface does expose
 // birthDay (date-only, no time), aliased back to the name every downstream
 // consumer already expects.
+//
+// nextClassicFixturePlayingStatusOdds (Sorare's own starter odds, from its
+// data partner) is the same story and cost an outage once already: it sits on
+// the concrete Player, NOT on AnyPlayerInterface, so asking for it directly
+// 422s the whole batch and silently kills every enrichment — exactly the
+// failure mode of the birthDate bug. Unlike birthDate it *is* reachable via
+// an inline fragment on Player, verified against the live API. Any new field
+// added here gets the same treatment: post the document to the API and check
+// it resolves before trusting it.
 export const PLAYERS_BY_SLUG = `
 query PlayersBySlug($slugs: [String!]!) {
   players(slugs: $slugs) {
@@ -90,6 +99,14 @@ query PlayersBySlug($slugs: [String!]!) {
     activeInjuries { status expectedEndDate }
     activeSuspensions { reason endDate }
     nextClassicFixtureProjectedScore
+    ... on Player {
+      nextClassicFixturePlayingStatusOdds {
+        starterOddsBasisPoints
+        reliability
+        providerIconUrl
+        providerRedirectUrl
+      }
+    }
     lastFiveSo5Appearances
     lastFifteenSo5Appearances
     seasonAppearances

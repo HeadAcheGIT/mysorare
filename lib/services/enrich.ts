@@ -59,6 +59,12 @@ type ApiPlayer = {
   activeInjuries: { status: string | null; expectedEndDate: string | null }[] | null;
   activeSuspensions: { reason: string | null; endDate: string | null }[] | null;
   nextClassicFixtureProjectedScore: number | null;
+  nextClassicFixturePlayingStatusOdds: {
+    starterOddsBasisPoints: number | null;
+    reliability: string | null;
+    providerIconUrl: string | null;
+    providerRedirectUrl: string | null;
+  } | null;
   lastFiveSo5Appearances: number | null;
   lastFifteenSo5Appearances: number | null;
   seasonAppearances: number | null;
@@ -72,6 +78,22 @@ export function parseDate(v: unknown): Date | null {
   if (!v) return null;
   const d = new Date(String(v));
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * The odds API gives an icon/redirect URL for its data partner but no plain
+ * name — derived from the redirect host as a readable fallback label (the
+ * icon itself is the primary "who is this" signal in the UI).
+ */
+export function providerNameFromUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    const base = host.split(".")[0];
+    return base ? base.charAt(0).toUpperCase() + base.slice(1) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function enrichBatch(): Promise<EnrichProgress> {
@@ -180,12 +202,16 @@ async function enrichPlayers(slugs: string[]): Promise<void> {
     // Drop the nulls (games the player didn't feature in) — the sparkline and
     // averages should read actual performances, not gaps.
     const scores = (p.rawPlayerGameScores ?? []).filter((s): s is number => typeof s === "number");
+    const odds = p.nextClassicFixturePlayingStatusOdds;
+    const starterOdds = odds?.starterOddsBasisPoints != null ? odds.starterOddsBasisPoints / 10000 : null;
 
     return Prisma.sql`(${p.slug}, ${p.displayName ?? p.slug}, ${p.anyPositions?.[0] ?? "Midfielder"},
       ${p.age ?? null}, ${parseDate(p.birthDate)}, ${p.shirtNumber ?? null},
       ${p.squaredPictureUrl ?? p.avatarPictureUrl ?? null}, ${p.country?.code ?? null},
       ${p.activeClub?.slug ?? null}, ${injury?.status ?? null}, ${parseDate(injury?.expectedEndDate)},
       ${Boolean(suspension)}, ${p.nextClassicFixtureProjectedScore ?? null},
+      ${starterOdds}, ${providerNameFromUrl(odds?.providerRedirectUrl)}, ${odds?.providerIconUrl ?? null},
+      ${odds?.reliability ?? null},
       ${JSON.stringify(scores)}, ${p.lastFiveSo5Appearances ?? null},
       ${p.lastFifteenSo5Appearances ?? null}, ${p.seasonAppearances ?? null},
       ${p.avgL5 ?? null}, ${p.avgL15 ?? null}, ${p.avgL10Played ?? null}, ${now}, ${now})`;
@@ -194,31 +220,38 @@ async function enrichPlayers(slugs: string[]): Promise<void> {
   await prisma.$executeRaw`
     INSERT INTO "Player" ("slug", "displayName", "position", "age", "birthDate", "shirtNumber",
                           "pictureUrl", "country", "clubSlug", "injuryStatus", "injuryUntil",
-                          "suspended", "sorareProjection", "recentScores", "app5", "app15",
+                          "suspended", "sorareProjection",
+                          "sorareStarterOdds", "sorareOddsProviderName", "sorareOddsProviderIconUrl",
+                          "sorareOddsReliability",
+                          "recentScores", "app5", "app15",
                           "seasonAppearances", "avgL5", "avgL15", "avgL10Played",
                           "enrichedAt", "updatedAt")
     VALUES ${Prisma.join(rows)}
     ON CONFLICT ("slug") DO UPDATE SET
-      "displayName"       = EXCLUDED."displayName",
-      "position"          = EXCLUDED."position",
-      "age"               = EXCLUDED."age",
-      "birthDate"         = EXCLUDED."birthDate",
-      "shirtNumber"       = EXCLUDED."shirtNumber",
-      "pictureUrl"        = EXCLUDED."pictureUrl",
-      "country"           = EXCLUDED."country",
-      "clubSlug"          = EXCLUDED."clubSlug",
-      "injuryStatus"      = EXCLUDED."injuryStatus",
-      "injuryUntil"       = EXCLUDED."injuryUntil",
-      "suspended"         = EXCLUDED."suspended",
-      "sorareProjection"  = EXCLUDED."sorareProjection",
-      "recentScores"      = EXCLUDED."recentScores",
-      "app5"              = EXCLUDED."app5",
-      "app15"             = EXCLUDED."app15",
-      "seasonAppearances" = EXCLUDED."seasonAppearances",
-      "avgL5"             = EXCLUDED."avgL5",
-      "avgL15"            = EXCLUDED."avgL15",
-      "avgL10Played"      = EXCLUDED."avgL10Played",
-      "enrichedAt"        = EXCLUDED."enrichedAt",
-      "updatedAt"         = EXCLUDED."updatedAt"
+      "displayName"               = EXCLUDED."displayName",
+      "position"                  = EXCLUDED."position",
+      "age"                       = EXCLUDED."age",
+      "birthDate"                 = EXCLUDED."birthDate",
+      "shirtNumber"               = EXCLUDED."shirtNumber",
+      "pictureUrl"                = EXCLUDED."pictureUrl",
+      "country"                   = EXCLUDED."country",
+      "clubSlug"                  = EXCLUDED."clubSlug",
+      "injuryStatus"              = EXCLUDED."injuryStatus",
+      "injuryUntil"               = EXCLUDED."injuryUntil",
+      "suspended"                 = EXCLUDED."suspended",
+      "sorareProjection"          = EXCLUDED."sorareProjection",
+      "sorareStarterOdds"         = EXCLUDED."sorareStarterOdds",
+      "sorareOddsProviderName"    = EXCLUDED."sorareOddsProviderName",
+      "sorareOddsProviderIconUrl" = EXCLUDED."sorareOddsProviderIconUrl",
+      "sorareOddsReliability"     = EXCLUDED."sorareOddsReliability",
+      "recentScores"              = EXCLUDED."recentScores",
+      "app5"                      = EXCLUDED."app5",
+      "app15"                     = EXCLUDED."app15",
+      "seasonAppearances"         = EXCLUDED."seasonAppearances",
+      "avgL5"                     = EXCLUDED."avgL5",
+      "avgL15"                    = EXCLUDED."avgL15",
+      "avgL10Played"              = EXCLUDED."avgL10Played",
+      "enrichedAt"                = EXCLUDED."enrichedAt",
+      "updatedAt"                 = EXCLUDED."updatedAt"
   `;
 }

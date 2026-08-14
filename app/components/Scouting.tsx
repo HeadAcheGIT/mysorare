@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/apiFetch";
-import { POSITION_SHORT, compareNullable, u23Status, u23SortValue } from "@/lib/types";
+import { POSITION_SHORT, compareNullable, u23SortValue } from "@/lib/types";
 import { formatMoney as money, relativeDate as daysAgo } from "@/lib/format";
 import { scoreColor, SCORE_COLOR_CLASS } from "@/lib/types";
 import SortControl, { type SortDirection } from "./SortControl";
+import PlayerBadges from "./PlayerBadges";
 
 type Money = { amount: number; currency: string } | null;
 
@@ -264,7 +265,6 @@ export default function Scouting({
       <ul className="flex flex-col gap-2">
         {sortedPlayers.map((p) => {
           const t = p.inSeasonTrend;
-          const u23 = u23Status(p.birthDate);
           return (
             <li key={p.slug}>
               <button
@@ -297,14 +297,7 @@ export default function Scouting({
                         blessé
                       </span>
                     )}
-                    {u23?.eligible && (
-                      <span
-                        className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-flood/15 text-flood font-mono"
-                        title={`U23 · éligible jusqu'au ${u23.validUntil.toLocaleDateString("fr-FR")}`}
-                      >
-                        U23
-                      </span>
-                    )}
+                    <PlayerBadges birthDate={p.birthDate} />
                   </p>
                   <p className="text-xs text-muted truncate">
                     {POSITION_SHORT[p.position] ?? p.position}

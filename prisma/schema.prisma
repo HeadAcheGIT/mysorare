@@ -37,18 +37,29 @@ model Player {
   birthDate    DateTime?
 
   // Filled by the public (unauthenticated) Sorare API — see lib/sorare/publicClient.ts.
-  pictureUrl       String?
-  country          String?
-  shirtNumber      Int?
+  pictureUrl                String?
+  country                   String?
+  shirtNumber               Int?
   /// Sorare's own projection for the next fixture. Kept distinct from our
   /// computed Projection.expectedScore so the two can be compared rather than
   /// one silently overwriting the other.
-  sorareProjection Float?
+  sorareProjection          Float?
+  /// Sorare's own starter probability for the next Classic fixture, licensed
+  /// from a data partner (see providerName/providerIconUrl below) — the
+  /// `nextClassicFixturePlayingStatusOdds` field on the public API. Kept
+  /// distinct from our own Projection.pStart for the same reason as
+  /// sorareProjection above: so the two can be graded against each other
+  /// instead of one silently overwriting the other. Classic fixtures only —
+  /// no equivalent field exists for Daily on the current schema.
+  sorareStarterOdds         Float?
+  sorareOddsProviderName    String?
+  sorareOddsProviderIconUrl String?
+  sorareOddsReliability     String?
   /// Last few So5 scores, newest first, JSON-encoded. Powers the form
   /// sparkline without needing a row per game — Appearance still holds the
   /// full per-game detail when an authenticated sync has run.
-  recentScores     String?
-  enrichedAt       DateTime?
+  recentScores              String?
+  enrichedAt                DateTime?
 
   /// Appearances in the club's last 5 / 15 games. This is the playing-time
   /// signal the public API gives us in place of per-game minutes, and it's
@@ -126,11 +137,11 @@ model Appearance {
   /// lib/services/friendlies.ts. Sorare's public API carries international
   /// friendlies but no club pre-season games at all, which is exactly the
   /// window where you most need to know who is actually playing again.
-  goals   Int?
-  assists Int?
+  goals    Int?
+  assists  Int?
   /// API-Football's own match rating (~1-10). No So5 score exists for a
   /// friendly, so this is the only quality signal available for these games.
-  rating  Float?
+  rating   Float?
   friendly Boolean @default(false)
   /// "sorare" | "api_football"
   source   String  @default("sorare")
@@ -154,7 +165,145 @@ model Projection {
   note          String?
   computedAt    DateTime @default(now())
 
+  /// Snapshot of Player.sorareStarterOdds/sorareOddsProviderName at the time
+  /// this row was computed — unlike the Player copy (overwritten every sync),
+  /// this stays put once the fixture has passed, so it can be graded against
+  /// the real outcome later. See Player.sorareStarterOdds for what it is.
+  sorareStarterOdds      Float?
+  sorareOddsProviderName String?
+
   @@unique([playerSlug, fixtureSlug])
+  @@index([fixtureSlug])
+}
+
+/// What was actually fielded on Sorare for a fixture — one row per card in a
+/// submitted lineup, sourced from the authenticated `mySo5Lineups` field (see
+/// lib/services/alignedLineups.ts). This is the ground truth for "did I align
+/// this player", grouped by division/leaderboard exactly like Sorare itself
+/// splits a game week, used to grade both our own Projection.pStart and
+/// Player/Projection.sorareStarterOdds against what was actually played.
+model AlignedLineup {
+  id              Int      @id @default(autoincrement())
+  /// Sorare's own lineup id — stable across re-syncs, used with cardSlug as
+  /// the upsert key so re-running the sync doesn't duplicate rows.
+  so5LineupId     String
+  fixtureSlug     String
+  leaderboardSlug String?
+  leaderboardName String?
+  division        Int?
+  playerSlug      String
+  cardSlug        String
+  captain         Boolean  @default(false)
+  position        String?
+  /// So5 score once the fixture has been played — null until then.
+  actualScore     Float?
+  syncedAt        DateTime @default(now())
+
+  @@unique([so5LineupId, cardSlug])
+  @@index([fixtureSlug])
+  @@index([playerSlug])
+}
+
+/// A Sorare "league track" for one game week — the level at which you enter
+/// teams ("Champion Europe", "Contender", …), from the authenticated
+/// `so5Fixture.mySo5LeagueTracks`. This is the real structure of the account,
+/// replacing the hand-written COMPETITIONS list in lib/services/rules.ts as
+/// the answer to "where can I actually play this week". Per fixture, because
+/// eligibility and rewards change every game week.
+model LeagueTrack {
+  slug                 String
+  fixtureSlug          String
+  displayName          String
+  /// "IN_SEASON" | "ALL_SEASONS" — drives the in-season advisor's filter.
+  seasonality          String?
+  seasonalityName      String?
+  canCompose           Boolean  @default(false)
+  canComposeReason     String?
+  /// How many teams this track allows vs how many are actually unlocked.
+  maxManagerTeams      Int      @default(0)
+  unlockedManagerTeams Int      @default(0)
+  lineupsCount         Int      @default(0)
+  prizePool            Float?
+  prizePoolCurrency    String?
+  iconUrl              String?
+  syncedAt             DateTime @default(now())
+
+  divisions Division[]
+
+  @@id([fixtureSlug, slug])
+}
+
+/// One So5Leaderboard — a division inside a league track. Carries Sorare's own
+/// verdict on whether a line-up can be entered (`canCompose`) and exactly what
+/// is missing, which is what the in-season advisor reasons over.
+model Division {
+  slug        String
+  fixtureSlug String
+  trackSlug   String?
+  track       LeagueTrack? @relation(fields: [fixtureSlug, trackSlug], references: [fixtureSlug, slug], onDelete: Cascade)
+
+  displayName String
+  division    Int?
+  rarityType  String?
+  seasonality String?
+  cutOffDate  DateTime?
+
+  canCompose             Boolean @default(false)
+  canComposeReason       String?
+  missingCards           Int     @default(0)
+  /// JSON arrays — the positions/rarities Sorare says are short.
+  missingPositions       String?
+  missingRarities        String?
+  notEnoughEligibleCards Boolean @default(false)
+  /// Sorare's own market filter string for the cards this division needs —
+  /// surfaced as a link rather than re-derived, since it's their filter.
+  transferMarketFilters  String?
+
+  prizePool         Float?
+  prizePoolCurrency String?
+  divisionIconUrl   String?
+  myLineupCount     Int      @default(0)
+  syncedAt          DateTime @default(now())
+
+  eligibility DivisionEligibility[]
+
+  @@id([fixtureSlug, slug])
+  @@index([fixtureSlug])
+}
+
+/// Per-position card counts for one division, from `eligibleCardsCountByPosition`.
+/// `totalCount` is what you own that qualifies, `usedCardsCount` what is already
+/// committed elsewhere — the difference is what you can still field.
+model DivisionEligibility {
+  id           Int      @id @default(autoincrement())
+  fixtureSlug  String
+  divisionSlug String
+  division     Division @relation(fields: [fixtureSlug, divisionSlug], references: [fixtureSlug, slug], onDelete: Cascade)
+
+  position       String
+  seasonality    String?
+  totalCount     Int     @default(0)
+  usedCardsCount Int     @default(0)
+
+  @@unique([fixtureSlug, divisionSlug, position, seasonality])
+  @@index([fixtureSlug, divisionSlug])
+}
+
+/// One of the manager teams the account owns, with the division it currently
+/// sits in — the "où j'en suis" half of the board.
+model ManagerTeam {
+  /// Sorare's own ManagerTeam id.
+  id              String   @id
+  fixtureSlug     String
+  trackSlug       String?
+  name            String
+  activeDivision  Int?
+  divisionIconUrl String?
+  rarityType      String?
+  seasonality     String?
+  hidden          Boolean  @default(false)
+  syncedAt        DateTime @default(now())
+
   @@index([fixtureSlug])
 }
 
@@ -233,15 +382,15 @@ model PriceSnapshot {
 /// transferred away, the CSV can't tell us which. Captured right before the
 /// deletion csvImport.ts already did, so nothing is lost, just recorded.
 model Sale {
-  id           Int      @id @default(autoincrement())
-  cardSlug     String   @unique
-  playerSlug   String
-  playerName   String
-  rarity       String
-  season       Int?
-  serialNumber Int?
+  id                 Int      @id @default(autoincrement())
+  cardSlug           String   @unique
+  playerSlug         String
+  playerName         String
+  rarity             String
+  season             Int?
+  serialNumber       Int?
   /// What the export said this exact card was bought for, if known.
-  boughtPrice  Float?
+  boughtPrice        Float?
   /// Best-effort only: the CSV's last "Price" column before the card
   /// disappeared — SorareScore's own valuation, not a confirmed sale
   /// receipt. The export has no field for what a card actually sold for, so
@@ -257,17 +406,17 @@ model Sale {
   /// diff — see syncSoldOffersFromSorare in lib/services/sales.ts. Requires
   /// being signed in to Sorare in-app; null until a sync has run. When set,
   /// the UI should prefer this over lastKnownPrice entirely.
-  soldPrice Float?
-  soldAt    DateTime?
+  soldPrice         Float?
+  soldAt            DateTime?
   /// True when soldPrice had to be derived from a wei-denominated Sorare
   /// offer via a historical ETH/EUR rate (see lib/services/ethRate.ts)
   /// because Sorare's own record carried no direct EUR figure for it. The UI
   /// must flag this as an approximation rather than presenting it as the
   /// exact confirmed price the way a direct eurCents figure is.
-  soldPriceApprox   Boolean @default(false)
-  boughtPriceApprox Boolean @default(false)
+  soldPriceApprox   Boolean   @default(false)
+  boughtPriceApprox Boolean   @default(false)
   /// "csv_diff" (inferred, see above) | "sorare_sync" (confirmed transaction)
-  source    String    @default("csv_diff")
+  source            String    @default("csv_diff")
 
   @@index([playerSlug])
 }
@@ -308,14 +457,14 @@ model WatchlistGroup {
 }
 
 model WatchlistItem {
-  id         Int             @id @default(autoincrement())
+  id         Int            @id @default(autoincrement())
   playerSlug String
   label      String
   position   String?
   club       String?
-  createdAt  DateTime        @default(now())
+  createdAt  DateTime       @default(now())
   groupId    Int
-  group      WatchlistGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group      WatchlistGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   /// A player can only appear once per list, but the same player can sit on
   /// several lists (e.g. tracked for two different strategies).

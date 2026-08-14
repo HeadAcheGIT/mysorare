@@ -1,3 +1,4 @@
+import { config } from "../config";
 import { prisma } from "../prisma";
 import * as apiFootball from "./apiFootball";
 
@@ -186,6 +187,25 @@ export interface FriendlyAppearance {
   goals: number | null;
   assists: number | null;
   rating: number | null;
+}
+
+/**
+ * Why a player's friendlies list is empty, so the UI can say something useful
+ * instead of hiding the section. An empty list on its own is ambiguous: it
+ * could mean the player genuinely didn't feature, that the sync has never
+ * run, or that there's no API-Football key at all — and silently rendering
+ * nothing made a missing integration look like a player with no pre-season.
+ */
+export type FriendliesStatus = "ok" | "not_configured" | "never_synced";
+
+export async function friendliesStatus(): Promise<FriendliesStatus> {
+  if (!config.apiFootballKey) return "not_configured";
+  const lastOk = await prisma.syncLog.findFirst({
+    where: { job: "friendlies", status: "ok" },
+    orderBy: { ranAt: "desc" },
+    select: { id: true },
+  });
+  return lastOk ? "ok" : "never_synced";
 }
 
 /** Locally-stored club friendlies for one player, newest first — merged into the player popup. */

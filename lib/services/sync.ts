@@ -44,7 +44,7 @@ export async function syncSquadAndFixtures(): Promise<{ cards: number; fixture: 
       create: {
         slug: p.slug,
         displayName: p.displayName ?? p.slug,
-        position: p.position ?? "Midfielder",
+        position: p.anyPositions?.[0] ?? "Midfielder",
         age: p.age ?? null,
         clubSlug: club?.slug ?? null,
         injuryStatus: injuries[0]?.status ?? null,
@@ -52,7 +52,7 @@ export async function syncSquadAndFixtures(): Promise<{ cards: number; fixture: 
       },
       update: {
         displayName: p.displayName ?? p.slug,
-        position: p.position ?? "Midfielder",
+        position: p.anyPositions?.[0] ?? "Midfielder",
         age: p.age ?? null,
         clubSlug: club?.slug ?? null,
         injuryStatus: injuries[0]?.status ?? null,
@@ -87,7 +87,7 @@ export async function syncSquadAndFixtures(): Promise<{ cards: number; fixture: 
   }
 
   const fixtureData = await graphql<any>(OPEN_FIXTURES);
-  const nodes = fixtureData?.football?.so5?.so5Fixtures?.nodes ?? [];
+  const nodes = fixtureData?.so5?.so5Fixtures?.nodes ?? [];
   let current: string | null = null;
   for (const n of nodes) {
     await prisma.fixture.upsert({
@@ -118,10 +118,10 @@ export async function syncFormBatch(
   for (const { slug } of slice) {
     try {
       const data = await graphql<any>(PLAYER_FORM, { slug, last: 15 });
-      const scores = data?.football?.player?.allSo5Scores?.nodes ?? [];
+      const scores = data?.anyPlayer?.allPlayerGameScores?.nodes ?? [];
       for (const entry of scores) {
-        const stats = entry.playerGameStats;
-        const game = stats?.game;
+        const stats = entry.anyPlayerGameStats;
+        const game = entry.anyGame;
         if (!game?.id) continue;
         const minutes = stats.minsPlayed ?? 0;
         await prisma.appearance.upsert({
@@ -250,6 +250,8 @@ export async function recomputeProjections(fixtureSlug: string): Promise<number>
         l5: form.l5,
         l15: form.l15,
         note: agg.note,
+        sorareStarterOdds: player.sorareStarterOdds,
+        sorareOddsProviderName: player.sorareOddsProviderName,
       },
       update: {
         pStart: agg.pStart,
@@ -260,6 +262,8 @@ export async function recomputeProjections(fixtureSlug: string): Promise<number>
         l15: form.l15,
         note: agg.note,
         computedAt: now,
+        sorareStarterOdds: player.sorareStarterOdds,
+        sorareOddsProviderName: player.sorareOddsProviderName,
       },
     });
     written++;

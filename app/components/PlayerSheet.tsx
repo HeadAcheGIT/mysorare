@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Sparkline from "./Sparkline";
 import MatchList from "./MatchList";
 import PlayerNews from "./PlayerNews";
+import PlayerBadges from "./PlayerBadges";
 import { POSITION_LABEL, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
 
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
@@ -73,6 +74,9 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
                 <img src={card.clubPicture} alt="" className="w-4 h-4 object-contain" />
               )}
               {card.club ?? "sans club"}
+            </p>
+            <p className="flex items-center gap-1.5 mt-1 flex-wrap">
+              <PlayerBadges birthDate={card.birthDate} competitionName={card.competitionName} />
             </p>
           </div>
           <button

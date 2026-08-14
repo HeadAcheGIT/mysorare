@@ -38,6 +38,10 @@ export interface PlayerDetail {
   picture: string | null;
   club: { name: string; picture: string | null } | null;
   injury: string | null;
+  /** Powers the U23 badge — see u23Status() in lib/types.ts. */
+  birthDate: string | null;
+  /** The club's domestic league/division, for the championship badge. */
+  competitionName: string | null;
   pastGames: GameEntry[];
   futureGames: GameEntry[];
 }
@@ -49,8 +53,13 @@ query PlayerDetail($slug: String!) {
     displayName
     anyPositions
     age
+    # anyPlayer resolves AnyPlayerInterface, which exposes birthDay (date-only)
+    # and NOT birthDate — asking for the latter 422s the whole query and takes
+    # the popup down with it. Same trap as PLAYERS_BY_SLUG in
+    # lib/sorare/publicClient.ts; aliased to the name consumers already use.
+    birthDate: birthDay
     squaredPictureUrl
-    activeClub { ... on Club { name pictureUrl } }
+    activeClub { ... on Club { name pictureUrl domesticLeague { displayName } } }
     activeInjuries { status expectedEndDate }
     pastGames: anyPastGames(first: 8) {
       nodes {
@@ -109,6 +118,8 @@ export async function getPlayerDetail(slug: string): Promise<PlayerDetail | null
     picture: p.squaredPictureUrl ?? null,
     club: p.activeClub ? { name: p.activeClub.name, picture: p.activeClub.pictureUrl } : null,
     injury: injury?.status ?? null,
+    birthDate: p.birthDate ?? null,
+    competitionName: p.activeClub?.domesticLeague?.displayName ?? null,
     pastGames: (p.pastGames?.nodes ?? []).map((g: any): GameEntry => {
       const competition = g.competition?.displayName ?? null;
       const stats = g.playerGameScore?.anyPlayerGameStats;

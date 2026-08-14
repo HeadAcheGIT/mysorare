@@ -3,6 +3,78 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-14 — L'app reflète enfin le vrai Sorare (divisions, amicaux, analyse in-season)
+
+Demande : voir les joueurs alignés par GW et les confronter aux % de
+titularisation, propager la prévisualisation joueur partout, et un vrai outil
+pour décider sur quelle division in-season se lancer. Constat après une
+première livraison jugée inutilisable : le problème n'était pas l'affichage.
+
+### Trois requêtes GraphQL étaient mortes contre le schéma actuel
+
+Le plus grave d'abord. Un script de validation poste maintenant chaque
+document du repo à l'API : les 13 passent. Il a trouvé trois requêtes cassées,
+toutes silencieuses en production :
+
+- `MY_CARDS` demandait `position`, qui n'existe pas sur `AnyPlayerInterface`
+  (c'est `anyPositions`) — **la synchro des cartes échouait entièrement**.
+- `PLAYER_FORM` utilisait `football.player` et `allSo5Scores`, tous deux
+  disparus du schéma — **la synchro de forme n'écrivait plus une seule
+  `Appearance`**. Reconstruite sur `anyPlayer` + `allPlayerGameScores`, avec
+  `first` et non `last` : la connexion est triée par date décroissante, donc
+  `last` ramenait les matchs les *plus anciens* (des rencontres de 2018 pour
+  modéliser la forme actuelle). Effet de bord bienvenu : `anyPlayer` est
+  public, la forme ne nécessite plus de connexion.
+- `so5` a été lu comme un champ de `FootballRoot` alors qu'il est à la
+  **racine** de `Query` — `OPEN_FIXTURES` en souffrait déjà.
+
+Même famille de bug que l'enrichissement du 12/08 : un champ pris sur une
+interface au lieu du type concret. `nextClassicFixturePlayingStatusOdds` est
+dans ce cas et passe désormais par un fragment `... on Player`.
+
+### Mes divisions, telles que Sorare les découpe
+
+`lib/services/rules.ts` décrivait quatre compétitions **écrites à la main**,
+avec un commentaire admettant que c'étaient des approximations. Aucun lien
+avec le compte réel : l'onglet Compo ne pouvait pas refléter le vrai Sorare.
+
+Nouveau socle synchronisé depuis `so5Fixture.mySo5LeagueTracks` : les league
+tracks accessibles, les manager teams avec leur division active, et pour
+chaque division l'avis d'éligibilité de Sorare lui-même (`canCompose`) plus
+le décompte de cartes par poste (`eligibleCardsCountByPosition`). Le
+`DivisionBoard` montre, par division, soit les joueurs réellement alignés
+avec notre probabilité face à celle de Sorare, soit ce qui manque exactement.
+
+Sorare plafonne la **complexité** à 500 sans clé API (30000 avec). La requête
+naturelle pèse 3905 : elle est découpée en quatre documents, chacun mesuré
+sous le plafond, pour que la fonctionnalité marche sur un compte simplement
+connecté. `rules.ts` continue de piloter les contraintes de l'optimiseur.
+
+### Amicaux : un état vide qui dit enfin quelque chose
+
+Le pipeline était complet et correct. La section était rendue sous
+`friendlies.length > 0`, donc **absente sans rien dire** : une intégration non
+configurée était indiscernable d'un joueur sans présaison. Elle s'affiche
+maintenant toujours, avec la raison (clé `APIFOOTBALL_KEY` absente / jamais
+synchronisé / aucun amical pour ce joueur).
+
+### Où se lancer en in-season
+
+Divisions classées par proximité de jouabilité × dotation, contre un budget.
+L'éligibilité est un fait (verdict de Sorare) ; le coût est une **estimation**
+— médiane des valorisations in-season de la galerie — et est libellé comme tel
+partout, jamais comme un prix de marché. Les deux moitiés sont séparées à
+dessein : un prix approximatif ne doit pas faire douter d'une éligibilité
+exacte. Budget lu sur le solde Sorare (`availableBalances`, fiat + crypto),
+surchargeable à la main.
+
+### Prévisualisation joueur propagée
+
+`PlayerBadges` (nouveau) factorise le bloc U23 / in-season / championnat
+dupliqué entre `PlayerCard` et `Scouting`, et le pose sur les quatre écrans
+qui ne l'avaient pas : fiche carte, popup joueur, insights, watchlist et
+recherche marché.
+
 ## 2026-08-12 (après-midi) — Tri cohérent partout + refonte de l'onglet Historique
 
 Demande : un tri U23 en plus, un sens croissant/décroissant partout, et un

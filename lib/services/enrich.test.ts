@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseDate } from "./enrich";
+import { parseDate, providerNameFromUrl } from "./enrich";
 
 describe("parseDate", () => {
   it("returns null for null/undefined/empty", () => {
@@ -22,5 +22,21 @@ describe("parseDate", () => {
     // Documents an actual quirk of the implementation (new Date(String(v))),
     // not a desired behaviour: a numeric epoch millis value does NOT parse.
     expect(parseDate(1710000000000)).toBeNull();
+  });
+});
+
+describe("providerNameFromUrl", () => {
+  it("returns null for null/undefined", () => {
+    expect(providerNameFromUrl(null)).toBeNull();
+    expect(providerNameFromUrl(undefined)).toBeNull();
+  });
+
+  it("derives a capitalised name from the hostname", () => {
+    expect(providerNameFromUrl("https://www.genius.com/redirect")).toBe("Genius");
+    expect(providerNameFromUrl("https://sportmonks.com")).toBe("Sportmonks");
+  });
+
+  it("returns null for an unparsable URL", () => {
+    expect(providerNameFromUrl("not-a-url")).toBeNull();
   });
 });

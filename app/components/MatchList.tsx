@@ -38,14 +38,30 @@ type FriendlyEntry = {
   rating: number | null;
 };
 
+/** Why the friendlies list is empty — see friendliesStatus in lib/services/friendlies.ts. */
+type FriendliesStatus = "ok" | "not_configured" | "never_synced";
+
 type PlayerDetail = {
   slug: string;
   pastGames: GameEntry[];
   futureGames: GameEntry[];
   friendlies?: FriendlyEntry[];
+  friendliesStatus?: FriendliesStatus;
 };
 
-export type { GameEntry, FriendlyEntry, PlayerDetail as MatchListDetail };
+export type { GameEntry, FriendlyEntry, FriendliesStatus, PlayerDetail as MatchListDetail };
+
+/**
+ * The pre-season section used to disappear entirely when the list was empty,
+ * which made "this integration was never set up" look identical to "this
+ * player had no pre-season". Always rendering it, with the reason, is the
+ * difference between a silent gap and something actionable.
+ */
+const FRIENDLIES_EMPTY: Record<FriendliesStatus, string> = {
+  ok: "Aucun match de préparation pour ce joueur.",
+  not_configured: "Clé API-Football absente — renseigne APIFOOTBALL_KEY pour voir les amicaux de club.",
+  never_synced: "Jamais synchronisé — lance « Synchroniser les amicaux » dans l'onglet Données.",
+};
 
 function Row({ game }: { game: GameEntry }) {
   const played = game.minutesPlayed != null || game.so5Score != null;
@@ -106,7 +122,12 @@ export default function MatchList({
   initialGames,
 }: {
   slug: string;
-  initialGames?: { pastGames: GameEntry[]; futureGames: GameEntry[]; friendlies?: FriendlyEntry[] };
+  initialGames?: {
+    pastGames: GameEntry[];
+    futureGames: GameEntry[];
+    friendlies?: FriendlyEntry[];
+    friendliesStatus?: FriendliesStatus;
+  };
 }) {
   const [detail, setDetail] = useState<PlayerDetail | null>(
     initialGames ? { slug, ...initialGames } : null
@@ -160,11 +181,15 @@ export default function MatchList({
         )}
       </div>
 
-      {detail.friendlies && detail.friendlies.length > 0 && (
-        <div>
-          <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">
-            Matchs de préparation
+      <div>
+        <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">
+          Matchs de préparation
+        </p>
+        {!detail.friendlies || detail.friendlies.length === 0 ? (
+          <p className="font-mono text-xs text-muted">
+            {FRIENDLIES_EMPTY[detail.friendliesStatus ?? "ok"]}
           </p>
+        ) : (
           <ul className="divide-y divide-line">
             {detail.friendlies.map((f) => (
               <li key={f.gameId} className="py-1.5">
@@ -184,8 +209,8 @@ export default function MatchList({
               </li>
             ))}
           </ul>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

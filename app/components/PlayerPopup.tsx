@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import MatchList, { type MatchListDetail } from "./MatchList";
 import PlayerNews from "./PlayerNews";
+import PlayerBadges from "./PlayerBadges";
 import { POSITION_LABEL } from "@/lib/types";
 
 type PlayerDetail = MatchListDetail & {
@@ -13,6 +14,8 @@ type PlayerDetail = MatchListDetail & {
   picture: string | null;
   club: { name: string; picture: string | null } | null;
   injury: string | null;
+  birthDate: string | null;
+  competitionName: string | null;
 };
 
 type MarketFloor = { floorByRarity: Record<string, number | null>; listedCount: number };
@@ -127,6 +130,9 @@ export default function PlayerPopup({
                   )}
                   {detail.club?.name ?? "sans club"}
                 </p>
+                <p className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  <PlayerBadges birthDate={detail.birthDate} competitionName={detail.competitionName} />
+                </p>
               </div>
               <button
                 onClick={onClose}
@@ -173,6 +179,7 @@ export default function PlayerPopup({
                       pastGames: detail.pastGames,
                       futureGames: detail.futureGames,
                       friendlies: detail.friendlies,
+                      friendliesStatus: detail.friendliesStatus,
                     }}
                   />
                 </div>

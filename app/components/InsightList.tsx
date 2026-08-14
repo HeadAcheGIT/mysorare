@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import PlayerBadges from "./PlayerBadges";
 
 export type Insight = {
   kind: string;
@@ -11,6 +12,8 @@ export type Insight = {
   club: string | null;
   position: string;
   rarity: string;
+  birthDate: string | null;
+  competitionName: string | null;
   reason: string;
   floorPrice: number | null;
   boughtPrice: number | null;
@@ -85,6 +88,9 @@ export default function InsightList({
                   <p className="text-[11px] text-muted truncate">
                     {POS[it.position] ?? it.position}
                     {it.club ? ` · ${it.club}` : ""}
+                  </p>
+                  <p className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    <PlayerBadges birthDate={it.birthDate} competitionName={it.competitionName} />
                   </p>
                 </div>
                 <p className={`font-mono text-[11px] text-right shrink-0 max-w-[45%] ${tone.text}`}>{it.reason}</p>

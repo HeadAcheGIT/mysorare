@@ -21,6 +21,10 @@ export interface Insight {
   club: string | null;
   position: string;
   rarity: string;
+  /** ISO date of birth, when known — powers the U23 badge. */
+  birthDate: string | null;
+  /** The club's domestic league/division, for the championship badge. */
+  competitionName: string | null;
   reason: string;
   /// Sort key within a group — bigger means "look at this first".
   weight: number;
@@ -112,6 +116,8 @@ export async function buildInsights(
       club: club?.name ?? null,
       position: p.position,
       rarity: c.rarity,
+      birthDate: p.birthDate?.toISOString() ?? null,
+      competitionName: club?.competitionName ?? null,
       floorPrice: c.floorPrice,
       boughtPrice: c.boughtPrice,
       expected: proj?.expectedScore ?? null,

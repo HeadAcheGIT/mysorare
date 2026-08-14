@@ -4,13 +4,38 @@ import { ApiError, withErrorHandling } from "@/lib/apiHandler";
 
 export const dynamic = "force-dynamic";
 
-/** Every group with its items, ordered so the oldest (default) list comes first. */
+/**
+ * Every group with its items, ordered so the oldest (default) list comes
+ * first. birthDate/competitionName aren't stored on the watchlist item itself
+ * (a transfer would make a stored club/league stale) — joined live from
+ * Player/Club instead, same as insights.ts does for its own rows.
+ */
 export const GET = withErrorHandling(async () => {
   const groups = await prisma.watchlistGroup.findMany({
     orderBy: { id: "asc" },
     include: { items: { orderBy: { createdAt: "desc" } } },
   });
-  return NextResponse.json(groups);
+
+  const slugs = groups.flatMap((g) => g.items.map((i) => i.playerSlug));
+  const players = await prisma.player.findMany({
+    where: { slug: { in: slugs } },
+    include: { club: true },
+  });
+  const playerMap = new Map(players.map((p) => [p.slug, p]));
+
+  return NextResponse.json(
+    groups.map((g) => ({
+      ...g,
+      items: g.items.map((i) => {
+        const p = playerMap.get(i.playerSlug);
+        return {
+          ...i,
+          birthDate: p?.birthDate?.toISOString() ?? null,
+          competitionName: p?.club?.competitionName ?? null,
+        };
+      }),
+    }))
+  );
 });
 
 export const POST = withErrorHandling(async (req: NextRequest) => {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch, ApiFetchError } from "@/lib/apiFetch";
-import { POSITION_SHORT, compareNullable, u23SortValue, u23Status, type SquadCard, type SquadResponse } from "@/lib/types";
+import { POSITION_SHORT, compareNullable, u23SortValue, type SquadCard, type SquadResponse } from "@/lib/types";
 import PlayerCard from "./components/PlayerCard";
 import AlertBadges, { type PlayerAlert } from "./components/AlertBadges";
 import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, HistoryIcon, DataIcon } from "./components/NavIcons";
@@ -17,6 +17,9 @@ import InsightList, { type InsightGroup } from "./components/InsightList";
 import DataHealth from "./components/DataHealth";
 import Scouting from "./components/Scouting";
 import PlayerPopup from "./components/PlayerPopup";
+import PlayerBadges from "./components/PlayerBadges";
+import DivisionBoard from "./components/DivisionBoard";
+import InSeasonAdvisor from "./components/InSeasonAdvisor";
 
 type OptimiseResult = {
   fixture: string | null;
@@ -208,7 +211,14 @@ export default function Page() {
   // Market
   const [marketQuery, setMarketQuery] = useState("");
   const [marketResults, setMarketResults] = useState<
-    { slug: string; name: string; position: string; club: string | null; birthDate: string | null }[]
+    {
+      slug: string;
+      name: string;
+      position: string;
+      club: string | null;
+      birthDate: string | null;
+      competitionName: string | null;
+    }[]
   >([]);
   const [marketLoading, setMarketLoading] = useState(false);
   type MarketSortKey = "name" | "position" | "club" | "u23";
@@ -259,7 +269,14 @@ export default function Page() {
   };
   const [watchlistSort, setWatchlistSort] = useState<WatchlistSortKey>("name");
   const [watchlistDirection, setWatchlistDirection] = useState<SortDirection>(WATCHLIST_DEFAULT_DIRECTION.name);
-  type WatchlistItemRow = { playerSlug: string; label: string; position: string | null; club: string | null };
+  type WatchlistItemRow = {
+    playerSlug: string;
+    label: string;
+    position: string | null;
+    club: string | null;
+    birthDate: string | null;
+    competitionName: string | null;
+  };
   type WatchlistGroupRow = { id: number; name: string; items: WatchlistItemRow[] };
   const [watchlistGroups, setWatchlistGroups] = useState<WatchlistGroupRow[]>([]);
   const [activeWatchlistGroup, setActiveWatchlistGroup] = useState<number | null>(null);
@@ -906,6 +923,24 @@ export default function Page() {
                 </ul>
               </div>
             )}
+
+            <div className="mt-6">
+              <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
+                Mes divisions
+              </h2>
+              <DivisionBoard
+                currentFixture={gameWeek?.fixture ?? null}
+                onSelectPlayer={openPlayer}
+                onError={setError}
+              />
+            </div>
+
+            <div className="mt-6">
+              <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
+                Où me lancer en in-season
+              </h2>
+              <InSeasonAdvisor fixture={gameWeek?.fixture ?? null} onError={setError} />
+            </div>
           </section>
         )}
 
@@ -957,7 +992,6 @@ export default function Page() {
                 <ul className="flex flex-col gap-2 mb-6">
                 {sortedMarketResults.map((p) => {
                   const price = prices[p.slug];
-                  const u23 = u23Status(p.birthDate);
                   return (
                     <li key={p.slug} className="p-3 rounded-lg bg-ink2 border border-line">
                       <div className="flex items-center justify-between gap-2">
@@ -969,17 +1003,12 @@ export default function Page() {
                           <p className="font-bold truncate flex items-center gap-1.5">
                             {p.name}
                             <AlertBadges alerts={alertsBySlug[p.slug]} />
-                            {u23?.eligible && (
-                              <span
-                                className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-flood/15 text-flood font-mono"
-                                title={`U23 · éligible jusqu'au ${u23.validUntil.toLocaleDateString("fr-FR")}`}
-                              >
-                                U23
-                              </span>
-                            )}
                           </p>
                           <p className="text-xs text-muted truncate">
                             {POSITION_SHORT[p.position] ?? p.position} · {p.club ?? "—"}
+                          </p>
+                          <p className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <PlayerBadges birthDate={p.birthDate} competitionName={p.competitionName} />
                           </p>
                         </button>
                         <div className="flex gap-2 shrink-0">
@@ -1100,6 +1129,9 @@ export default function Page() {
                         <p className="text-xs text-muted truncate">
                           {w.position ? POSITION_SHORT[w.position] ?? w.position : ""}
                           {w.club ? ` · ${w.club}` : ""}
+                        </p>
+                        <p className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <PlayerBadges birthDate={w.birthDate} competitionName={w.competitionName} />
                         </p>
                       </button>
                       <div className="flex gap-2 shrink-0">

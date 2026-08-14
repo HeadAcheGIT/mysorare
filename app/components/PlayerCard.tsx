@@ -2,7 +2,8 @@
 
 import Sparkline from "./Sparkline";
 import AlertBadges, { type PlayerAlert } from "./AlertBadges";
-import { POSITION_SHORT, rarityOf, scoreColor, SCORE_COLOR_CLASS, u23Status, type SquadCard } from "@/lib/types";
+import PlayerBadges from "./PlayerBadges";
+import { POSITION_SHORT, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
 
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
@@ -30,8 +31,7 @@ export default function PlayerCard({
   // labelled so the number is never mistaken for something it isn't.
   const score = card.expected ?? card.sorareProjection ?? card.l10;
   const scoreLabel = card.expected != null ? "projeté" : card.sorareProjection != null ? "Sorare" : "L10";
-  const unavailable = card.injury || card.suspended;
-  const u23 = u23Status(card.birthDate);
+  const unavailable = Boolean(card.injury || card.suspended);
   const covered = card.competitionSlug ? coveredLeagues?.has(card.competitionSlug) : undefined;
   const isUnique = card.rarity === "unique";
 
@@ -91,33 +91,13 @@ export default function PlayerCard({
               row on purpose (see PlayerCard audit note H-2): a long real name
               was losing the truncation fight against 3+ badges. */}
           <p className="flex items-center gap-1.5 mt-1 flex-wrap">
-            {card.inSeason && !unavailable && (
-              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-ok/15 text-ok font-mono" title="Éligible in-season">
-                IS
-              </span>
-            )}
-            {!card.inSeason && !unavailable && (
-              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-line/50 text-muted font-mono" title="Classic uniquement">
-                CL
-              </span>
-            )}
-            {u23?.eligible && (
-              <span
-                className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-flood/15 text-flood font-mono"
-                title={`U23 · éligible jusqu'au ${u23.validUntil.toLocaleDateString("fr-FR")}`}
-              >
-                U23
-              </span>
-            )}
-            {card.competitionName && (
-              <span
-                className={`text-[10px] font-mono truncate ${covered === false ? "text-warn" : "text-muted"}`}
-                title={covered === false ? "Championnat non couvert par le scouting marché" : undefined}
-              >
-                {card.competitionName}
-                {covered === false && " · non couvert"}
-              </span>
-            )}
+            <PlayerBadges
+              birthDate={card.birthDate}
+              competitionName={card.competitionName}
+              inSeason={card.inSeason}
+              unavailable={unavailable}
+              covered={covered}
+            />
           </p>
 
           <div className="flex items-center gap-3 mt-1.5">

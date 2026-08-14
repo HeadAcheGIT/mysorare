@@ -25,7 +25,9 @@ query MyCards($first: Int, $after: String) {
         anyPlayer {
           slug
           displayName
-          position
+          # AnyPlayerInterface exposes anyPositions, not position — asking for
+          # the singular 422s the whole card sync.
+          anyPositions
           age
           activeInjuries { status expectedEndDate }
           activeClub { ... on Club { slug name country { code } } }
@@ -36,35 +38,207 @@ query MyCards($first: Int, $after: String) {
   }
 }`;
 
+/**
+ * `so5` is a ROOT field (Query.so5: So5Root!), not a member of FootballRoot —
+ * `football { so5 { … } }` fails outright with "Field 'so5' doesn't exist on
+ * type 'FootballRoot'". Verified against the live API, same as every other
+ * query in this file needs to be before it's trusted.
+ */
 export const OPEN_FIXTURES = `
 query OpenFixtures {
-  football {
-    so5 {
-      so5Fixtures(first: 3) {
-        nodes { slug startDate endDate aasmState }
+  so5 {
+    so5Fixtures(first: 3) {
+      nodes { slug startDate endDate aasmState }
+    }
+  }
+}`;
+
+/**
+ * What was actually fielded for one fixture — every lineup entered across
+ * every division/leaderboard, so "what did I align" reflects the real Sorare
+ * split rather than a single composite lineup. `so5Appearances(includeSubs:
+ * true)` carries the bench too, since a benched card is still worth grading
+ * against the probability that predicted it wouldn't start.
+ */
+export const MY_LINEUPS_FOR_FIXTURE = `
+query MyLineupsForFixture($slug: String!) {
+  so5 {
+    so5Fixture(slug: $slug) {
+      mySo5Lineups {
+        id
+        so5Leaderboard {
+          slug
+          displayName(short: true)
+          division
+          divisionIconUrl
+        }
+        so5Appearances(includeSubs: true) {
+          captain
+          position
+          score(withBonus: true)
+          anyCard { slug anyPlayer { slug } }
+        }
       }
     }
   }
 }`;
 
+/**
+ * The account's real competition structure for one game week: the league
+ * tracks it can enter ("Champion Europe", "Contender", …), the manager teams
+ * inside each with the division they currently sit in, and every division's
+ * own verdict on whether a line-up can be entered.
+ *
+ * This replaces the hand-written COMPETITIONS list in lib/services/rules.ts as
+ * the answer to "where can I actually play" — that list was four competitions
+ * typed from memory and could never match a real account.
+ *
+ * Deliberately does NOT nest `mySo5Lineups` under `so5Leaderboards`: that
+ * would be three levels of lists in one document, and MY_LINEUPS_FOR_FIXTURE
+ * above already fetches them flat with their leaderboard attached. Keeping
+ * them apart keeps this query inside Sorare's query-complexity cap.
+ *
+ * `canCompose` is Sorare's own eligibility verdict — `missingCards`,
+ * `missingPositions` and `missingAnyRarities` are what the in-season advisor
+ * reasons over, and `transferMarketFilters` is Sorare's own market filter for
+ * the cards that would close the gap.
+ */
+/**
+ * Split across four documents on purpose. Sorare caps *query complexity* at
+ * 500 without an API key (30000 with one), and the natural single query for
+ * this — tracks with their leaderboards, eligibility and rewards nested —
+ * measures 3905. Each document below was measured against the live API and
+ * lands under 500, so the divisions feature works on a plain signed-in
+ * account instead of silently requiring SORARE_API_KEY.
+ *
+ * The split is by cost, not by concern: nested lists are what blow the
+ * budget, so the leaderboard detail is fetched flat off the fixture
+ * (`so5Leaderboards`, every leaderboard of the game week) and matched back to
+ * tracks using the slug list from MY_TRACKS.
+ */
+export const MY_TRACKS = `
+query MyTracks($slug: String!) {
+  so5 {
+    so5Fixture(slug: $slug) {
+      slug
+      gameWeek
+      mySo5LeagueTracks {
+        slug
+        displayName
+        seasonality
+        seasonalityName
+        maxManagerTeamsCount
+        unlockedManagerTeamsCount
+        so5LineupsCount
+        canCompose { value reason missingCards notEnoughEligibleCards }
+        totalRewards { prizePool prizePoolCurrency }
+        so5Leaderboards { slug }
+      }
+    }
+  }
+}`;
+
+/** Manager teams are costly enough to need their own document — see MY_TRACKS. */
+export const MY_TRACK_TEAMS = `
+query MyTrackTeams($slug: String!) {
+  so5 {
+    so5Fixture(slug: $slug) {
+      mySo5LeagueTracks {
+        slug
+        iconUrl
+        myManagerTeams { id name activeDivision activeDivisionIconUrl }
+      }
+    }
+  }
+}`;
+
+/** Every division of the game week, with Sorare's own eligibility verdict. */
+export const FIXTURE_DIVISIONS = `
+query FixtureDivisions($slug: String!) {
+  so5 {
+    so5Fixture(slug: $slug) {
+      so5Leaderboards {
+        slug
+        displayName(short: true)
+        division
+        divisionIconUrl
+        rarityType
+        seasonality
+        cutOffDate
+        mySo5LineupsCount
+        canCompose {
+          value
+          reason
+          missingCards
+          notEnoughEligibleCards
+          missingPositions
+          missingAnyRarities
+          transferMarketFilters
+        }
+      }
+    }
+  }
+}`;
+
+/** Per-position card counts and prize pools — split out to stay under the cap. */
+export const DIVISION_ELIGIBILITY = `
+query DivisionEligibility($slug: String!) {
+  so5 {
+    so5Fixture(slug: $slug) {
+      so5Leaderboards {
+        slug
+        eligibleCardsCountByPosition { position seasonality totalCount usedCardsCount }
+        totalRewards { prizePool prizePoolCurrency }
+      }
+    }
+  }
+}`;
+
+/**
+ * Spendable balance, for the in-season advisor's "can I afford to close this
+ * gap" verdict. `availableBalances` splits cash from crypto: `eurCents` is the
+ * fiat wallet, `wei` the ETH one with its own EUR equivalent attached — the
+ * two together are the real buying power, which is why both are read.
+ */
+export const MY_FUNDS = `
+query MyFunds {
+  currentUser {
+    slug
+    nickname
+    availableBalances {
+      eurCents { eurCents }
+      wei { wei eurCents }
+    }
+  }
+}`;
+
+/**
+ * Per-game history behind the Appearance table and the internal form model.
+ *
+ * Rebuilt on `anyPlayer(slug)`: `football.player` and `allSo5Scores` are both
+ * gone from the current schema, so the old document 422'd on every player and
+ * quietly wrote nothing but error rows to the sync log. `first` (not `last`)
+ * is deliberate — allPlayerGameScores is ordered by *descending* game date,
+ * so `last` returns the player's oldest games, which is how you end up
+ * modelling current form off 2018 fixtures.
+ *
+ * Bonus of the rewrite: `anyPlayer` is public, so form no longer needs a login.
+ */
 export const PLAYER_FORM = `
 query PlayerForm($slug: String!, $last: Int!) {
-  football {
-    player(slug: $slug) {
-      slug
-      displayName
-      position
-      activeClub { ... on Club { slug name } }
-      activeInjuries { status expectedEndDate }
-      allSo5Scores(last: $last) {
-        nodes {
-          score
-          playerGameStats {
-            minsPlayed
-            onGameSheet
-            game { id date competition { displayName } }
-          }
+  anyPlayer(slug: $slug) {
+    slug
+    displayName
+    anyPositions
+    activeClub { ... on Club { slug name } }
+    activeInjuries { status expectedEndDate }
+    allPlayerGameScores(first: $last) {
+      nodes {
+        score
+        anyPlayerGameStats {
+          ... on PlayerGameStats { minsPlayed onGameSheet }
         }
+        anyGame { id date competition { displayName } }
       }
     }
   }
