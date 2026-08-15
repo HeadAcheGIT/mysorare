@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { projectFromPublic, recencyWeightedStartRate, type PublicInput } from "./publicProjection";
+import {
+  projectFromPublic,
+  recencyWeightedStartRate,
+  fixtureDifficultyFactor,
+  type PublicInput,
+} from "./publicProjection";
 
 const input = (over: Partial<PublicInput> = {}): PublicInput => ({
   position: "Forward",
@@ -58,6 +63,40 @@ describe("recencyWeightedStartRate", () => {
       { started: true },
     ];
     expect(recencyWeightedStartRate(games, 5)!.rate).toBeLessThan(4 / 7);
+  });
+});
+
+describe("fixtureDifficultyFactor", () => {
+  it("is neutral when nothing is known", () => {
+    expect(fixtureDifficultyFactor(null, null, null)).toBe(1);
+  });
+
+  it("favours facing a weaker-ranked opponent", () => {
+    expect(fixtureDifficultyFactor(2, 18, null)).toBeGreaterThan(1);
+  });
+
+  it("penalises facing a stronger one", () => {
+    expect(fixtureDifficultyFactor(18, 2, null)).toBeLessThan(1);
+  });
+
+  it("is neutral between equally-ranked clubs", () => {
+    expect(fixtureDifficultyFactor(7, 7, null)).toBe(1);
+  });
+
+  it("gives home a small edge and away a small penalty", () => {
+    expect(fixtureDifficultyFactor(null, null, true)).toBeGreaterThan(1);
+    expect(fixtureDifficultyFactor(null, null, false)).toBeLessThan(1);
+  });
+
+  /** Bounded on purpose: league position is a blunt proxy and must not dominate the projection. */
+  it("caps the swing even for an extreme mismatch", () => {
+    expect(fixtureDifficultyFactor(1, 200, true)).toBeLessThanOrEqual(1.16);
+    expect(fixtureDifficultyFactor(200, 1, false)).toBeGreaterThanOrEqual(0.84);
+  });
+
+  it("ignores nonsense rankings rather than trusting them", () => {
+    expect(fixtureDifficultyFactor(0, 5, null)).toBe(1);
+    expect(fixtureDifficultyFactor(5, 0, null)).toBe(1);
   });
 });
 
@@ -122,6 +161,24 @@ describe("projectFromPublic — what pStart measures", () => {
     const out = projectFromPublic(input({ hasClub: false, app5: 5, app15: 15 }));
     expect(out.pStart).toBe(0);
     expect(out.expected).toBe(0);
+  });
+
+  it("scores the same player higher against a weak opponent than a strong one", () => {
+    const base = { app5: 5, app15: 15, avgL10Played: 60, startRate: 1, startSample: 15 };
+    const easy = projectFromPublic(input({ ...base, ownRank: 2, opponentRank: 18, isHome: true }));
+    const hard = projectFromPublic(input({ ...base, ownRank: 18, opponentRank: 2, isHome: false }));
+
+    // Before this, both returned an identical projection.
+    expect(easy.expected).toBeGreaterThan(hard.expected);
+    expect(easy.note).toContain("favorable");
+    expect(hard.note).toContain("difficile");
+  });
+
+  it("leaves the projection untouched when the fixture is unknown", () => {
+    const base = { app5: 5, app15: 15, avgL10Played: 60 };
+    const withFixture = projectFromPublic(input({ ...base, ownRank: 7, opponentRank: 7, isHome: null }));
+    const without = projectFromPublic(input(base));
+    expect(withFixture.expected).toBe(without.expected);
   });
 
   it("falls back to the position baseline with nothing to go on", () => {

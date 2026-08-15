@@ -54,6 +54,7 @@ type ApiPlayer = {
     name: string;
     pictureUrl: string | null;
     country: { code: string | null } | null;
+    domesticLeagueRanking: number | null;
     domesticLeague: { slug: string; displayName: string } | null;
   } | null;
   activeInjuries: { status: string | null; expectedEndDate: string | null }[] | null;
@@ -180,17 +181,20 @@ async function enrichPlayers(slugs: string[]): Promise<void> {
     const values = [...clubs.values()].map(
       (c) =>
         Prisma.sql`(${c.slug}, ${c.name ?? c.slug}, ${c.country?.code ?? null}, ${c.pictureUrl ?? null},
-          ${c.domesticLeague?.slug ?? null}, ${c.domesticLeague?.displayName ?? null})`
+          ${c.domesticLeague?.slug ?? null}, ${c.domesticLeague?.displayName ?? null},
+          ${c.domesticLeagueRanking ?? null})`
     );
     await prisma.$executeRaw`
-      INSERT INTO "Club" ("slug", "name", "country", "pictureUrl", "competitionSlug", "competitionName")
+      INSERT INTO "Club" ("slug", "name", "country", "pictureUrl", "competitionSlug", "competitionName",
+                          "leagueRanking")
       VALUES ${Prisma.join(values)}
       ON CONFLICT ("slug") DO UPDATE SET
         "name"            = EXCLUDED."name",
         "country"         = EXCLUDED."country",
         "pictureUrl"      = EXCLUDED."pictureUrl",
         "competitionSlug" = EXCLUDED."competitionSlug",
-        "competitionName" = EXCLUDED."competitionName"
+        "competitionName" = EXCLUDED."competitionName",
+        "leagueRanking"   = EXCLUDED."leagueRanking"
     `;
   }
 

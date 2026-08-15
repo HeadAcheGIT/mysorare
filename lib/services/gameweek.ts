@@ -1,11 +1,45 @@
 import { Prisma } from "@prisma/client";
 import { config } from "../config";
 import { prisma } from "../prisma";
-import { publicGraphql, OPEN_FIXTURES_PUBLIC } from "../sorare/publicClient";
+import { publicGraphql, OPEN_FIXTURES_PUBLIC, FIXTURE_GAMES_PUBLIC } from "../sorare/publicClient";
 import { projectFromPublic, recencyWeightedStartRate } from "./publicProjection";
 
 /** Same window as the appearance counts the public API gives, so both signals cover the same period. */
 const FORM_WINDOW = config.formWindow;
+
+export interface Opponent {
+  opponentRank: number | null;
+  isHome: boolean;
+}
+
+/**
+ * Maps each club playing this game week to who it faces and whether at home.
+ *
+ * A club can appear more than once in a week; the first game found wins, which
+ * matches how the rest of the projection treats the week as a single fixture.
+ */
+export async function opponentsForFixture(fixtureSlug: string): Promise<Map<string, Opponent>> {
+  const data = await publicGraphql<{
+    so5: {
+      so5Fixture: {
+        games: {
+          homeTeam: { slug: string; domesticLeagueRanking: number | null } | null;
+          awayTeam: { slug: string; domesticLeagueRanking: number | null } | null;
+        }[];
+      } | null;
+    };
+  }>(FIXTURE_GAMES_PUBLIC, { slug: fixtureSlug });
+
+  const out = new Map<string, Opponent>();
+  for (const g of data?.so5?.so5Fixture?.games ?? []) {
+    const home = g.homeTeam;
+    const away = g.awayTeam;
+    if (!home?.slug || !away?.slug) continue;
+    if (!out.has(home.slug)) out.set(home.slug, { opponentRank: away.domesticLeagueRanking, isHome: true });
+    if (!out.has(away.slug)) out.set(away.slug, { opponentRank: home.domesticLeagueRanking, isHome: false });
+  }
+  return out;
+}
 
 /**
  * Game-week sync and projection, both running off the public API so they work
@@ -68,9 +102,15 @@ export async function recomputeFromPublic(fixtureSlug: string): Promise<number> 
   // and score it 0 with a "sans club" note — wrong, and indistinguishable from
   // a real assessment. No projection at all is the honest answer, and the UI
   // falls back to Sorare's own number or the CSV average.
-  const [players, cards, appearances] = await Promise.all([
+  // Who each club faces this game week, and whether at home — one call for the
+  // whole fixture, where asking per player would be one paced request each.
+  // Non-fatal: without it the projection simply carries no fixture adjustment.
+  const opponents = await opponentsForFixture(fixtureSlug).catch(() => new Map<string, Opponent>());
+
+  const [players, cards, clubs, appearances] = await Promise.all([
     prisma.player.findMany({ where: { enrichedAt: { not: null } } }),
     prisma.card.findMany(),
+    prisma.club.findMany({ select: { slug: true, leagueRanking: true } }),
     // Real per-game history — this is what turns "titularisation" from an
     // appearance rate into an actual starting rate. Public since PLAYER_FORM
     // moved to `anyPlayer`, so it's available without a Sorare login; a
@@ -83,6 +123,8 @@ export async function recomputeFromPublic(fixtureSlug: string): Promise<number> 
     }),
   ]);
   if (!players.length) return 0;
+
+  const rankByClub = new Map(clubs.map((c) => [c.slug, c.leagueRanking]));
 
   const startsByPlayer = new Map<string, { started: boolean }[]>();
   for (const a of appearances) {
@@ -116,6 +158,8 @@ export async function recomputeFromPublic(fixtureSlug: string): Promise<number> 
       config.recencyHalflife
     );
 
+    const fixtureOpponent = p.clubSlug ? opponents.get(p.clubSlug) : undefined;
+
     const form = projectFromPublic({
       position: p.position,
       app5: p.app5,
@@ -131,6 +175,9 @@ export async function recomputeFromPublic(fixtureSlug: string): Promise<number> 
       cardBonus: bonusByPlayer.get(p.slug) ?? 0,
       startRate: starts?.rate ?? null,
       startSample: starts?.sample ?? 0,
+      ownRank: p.clubSlug ? rankByClub.get(p.clubSlug) ?? null : null,
+      opponentRank: fixtureOpponent?.opponentRank ?? null,
+      isHome: fixtureOpponent?.isHome ?? null,
     });
 
     return { playerSlug: p.slug, form };

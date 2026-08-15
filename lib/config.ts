@@ -5,6 +5,11 @@ export const config = {
   sorareApiKey: process.env.SORARE_API_KEY ?? "",
   sorareOtp: process.env.SORARE_OTP ?? "",
 
+  // "Login with Sorare". Created self-service at sorare.com/settings/developer.
+  // Optional: without them the app falls back to the email/password sign-in.
+  oauthClientId: process.env.SORARE_OAUTH_CLIENT_ID ?? "",
+  oauthClientSecret: process.env.SORARE_OAUTH_CLIENT_SECRET ?? "",
+
   graphqlUrl: "https://api.sorare.com/graphql",
   restUrl: "https://api.sorare.com",
 

@@ -61,10 +61,54 @@ export interface PublicInput {
    */
   startRate?: number | null;
   startSample?: number;
+  /** League position of the player's own club, for the fixture difficulty read. */
+  ownRank?: number | null;
+  /** League position of this game week's opponent. */
+  opponentRank?: number | null;
+  /** Whether the club plays this one at home. */
+  isHome?: boolean | null;
 }
 
 const round = (v: number, dp = 2) => Math.round(v * 10 ** dp) / 10 ** dp;
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
+/** Most the fixture can swing a projection either way. */
+const MAX_DIFFICULTY_SWING = 0.12;
+/** Rank gap at which the swing is fully applied — roughly a table's length. */
+const RANK_GAP_SCALE = 18;
+const HOME_EDGE = 0.03;
+
+/**
+ * How much easier or harder this particular fixture looks, as a multiplier on
+ * the expected score. 1 means neutral.
+ *
+ * Built from the two clubs' league positions and who is at home, because that
+ * is what Sorare's public API actually exposes. League position is a blunt
+ * instrument and it is not comparable between competitions — second in Norway
+ * is not second in the Premier League — so only the *gap within a match* is
+ * read, and the whole effect is capped at ±12% plus a 3% home edge. The point
+ * is to stop a striker facing the leader and the bottom club scoring
+ * identically, not to pretend this is a match model.
+ */
+export function fixtureDifficultyFactor(
+  ownRank: number | null | undefined,
+  opponentRank: number | null | undefined,
+  isHome: boolean | null | undefined
+): number {
+  let factor = 1;
+
+  if (ownRank != null && opponentRank != null && ownRank > 0 && opponentRank > 0) {
+    // Rank 1 is best, so a positive gap means the opponent sits lower — easier.
+    const gap = opponentRank - ownRank;
+    const normalised = Math.max(-1, Math.min(1, gap / RANK_GAP_SCALE));
+    factor += normalised * MAX_DIFFICULTY_SWING;
+  }
+
+  if (isHome === true) factor += HOME_EDGE;
+  else if (isHome === false) factor -= HOME_EDGE;
+
+  return Math.round(factor * 1000) / 1000;
+}
 
 /**
  * Starting rate over recent games, newest first, with older games counting
@@ -181,6 +225,15 @@ export function projectFromPublic(input: PublicInput): PublicForm {
   if (input.sorareProjection != null) {
     expected = 0.5 * expected + 0.5 * input.sorareProjection;
     notes.push("Projection Sorare intégrée");
+  }
+
+  // Applied after Sorare's own projection is blended in: theirs already
+  // accounts for the fixture, so adjusting before the blend would count the
+  // opponent twice for the players Sorare covers.
+  const difficulty = fixtureDifficultyFactor(input.ownRank, input.opponentRank, input.isHome);
+  if (difficulty !== 1) {
+    expected *= difficulty;
+    notes.push(difficulty > 1 ? "Affiche favorable" : "Affiche difficile");
   }
 
   expected *= 1 + input.cardBonus;

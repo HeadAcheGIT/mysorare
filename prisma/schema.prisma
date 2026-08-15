@@ -18,6 +18,11 @@ model Club {
   /// Powers the division/championship badge on a player's card.
   competitionSlug String?
   competitionName String?
+  /// League position, 1 = top. Feeds the fixture-difficulty adjustment — see
+  /// fixtureDifficultyFactor in lib/services/publicProjection.ts, which only
+  /// ever compares it against the opponent in the same match because it isn't
+  /// meaningful across competitions.
+  leagueRanking   Int?
 }
 
 model Player {
@@ -411,6 +416,18 @@ model TokenCache {
   id        Int      @id @default(1)
   token     String
   expiresAt DateTime
+
+  /// How the token was obtained, because the two are not interchangeable:
+  ///   "oauth" — Sorare Connect. Friendly (no 2FA, revocable), but its single
+  ///             scope explicitly excludes future line-ups and rewards, so the
+  ///             Compo board and the season report cannot run on it.
+  ///   "jwt"   — email/password sign-in. Full access, 30-day token, but a new
+  ///             IP re-triggers 2FA, which on serverless is most of the time.
+  kind         String  @default("jwt")
+  /// OAuth only: access tokens last 2 hours, so the refresh token is what
+  /// makes Connect usable at all. Null for JWT.
+  refreshToken String?
+  nickname     String?
 }
 
 /// Live market floor, captured periodically for players actually owned or

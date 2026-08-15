@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { assertConfigured, config } from "../config";
 import { prisma } from "../prisma";
+import { refreshAccessToken } from "./oauth";
 
 export class SorareAuthError extends Error {}
 
@@ -40,6 +41,14 @@ async function hashedPassword(email: string, password: string): Promise<string> 
 async function readCache(): Promise<string | null> {
   const row = await prisma.tokenCache.findUnique({ where: { id: 1 } });
   if (!row) return null;
+
+  if (row.kind === "oauth") {
+    // OAuth access tokens last two hours, so they're refreshed on a minute's
+    // margin rather than the JWT's day — a day would mean never using one.
+    if (row.expiresAt.getTime() - 60_000 > Date.now()) return row.token;
+    return refreshAccessToken().catch(() => null);
+  }
+
   // renew a day early rather than getting a mid-request 401
   const oneDayMs = 24 * 60 * 60 * 1000;
   if (row.expiresAt.getTime() - oneDayMs > Date.now()) return row.token;
@@ -125,11 +134,34 @@ export async function completeOtp(challenge: string, otp: string): Promise<SignI
   return { status: "signed_in", nickname: signIn.currentUser?.nickname ?? null };
 }
 
-/** Whether a usable token is cached, and until when — drives the UI's status. */
-export async function tokenStatus(): Promise<{ signedIn: boolean; expiresAt: Date | null }> {
+/** Whether a usable token is cached, how it was obtained, and until when — drives the UI's status. */
+export async function tokenStatus(): Promise<{
+  signedIn: boolean;
+  expiresAt: Date | null;
+  kind: "oauth" | "jwt" | null;
+  nickname: string | null;
+  /**
+   * False on an OAuth session: its scope excludes future line-ups and rewards,
+   * so the Compo board and season report need the password sign-in. The UI
+   * reads this instead of hiding the limitation until a request fails.
+   */
+  canReadLineups: boolean;
+}> {
   const row = await prisma.tokenCache.findUnique({ where: { id: 1 } });
-  if (!row) return { signedIn: false, expiresAt: null };
-  return { signedIn: row.expiresAt.getTime() > Date.now(), expiresAt: row.expiresAt };
+  if (!row) return { signedIn: false, expiresAt: null, kind: null, nickname: null, canReadLineups: false };
+
+  const kind = row.kind === "oauth" ? "oauth" : "jwt";
+  // An expired OAuth access token is still a live session while a refresh
+  // token remains — the next call renews it silently.
+  const signedIn = row.expiresAt.getTime() > Date.now() || Boolean(row.refreshToken);
+
+  return {
+    signedIn,
+    expiresAt: row.expiresAt,
+    kind,
+    nickname: row.nickname,
+    canReadLineups: signedIn && kind === "jwt",
+  };
 }
 
 export async function getToken(force = false): Promise<string> {

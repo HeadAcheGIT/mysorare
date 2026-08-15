@@ -3,6 +3,51 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-16 (soir) — Sorare Connect + l'adversaire enfin pris en compte
+
+### Sorare Connect, avec sa limite dite d'emblée
+
+OAuth 2.0 officiel (`sorare.com/oauth/authorize`) : bouton « Sorare Connect »,
+échange du code, rafraîchissement automatique — les jetons d'accès ne durent
+que 2 h, sans refresh la connexion tomberait toutes les deux heures — et
+révocation côté Sorare à la déconnexion. Protection CSRF par cookie `state`.
+
+**Limite structurante, citée mot pour mot de la doc Sorare** : le scope unique
+exclut « Future lineups and rewards ». Connect ne peut donc **pas** alimenter
+l'onglet Compo ni le bilan de saison. L'app garde les deux méthodes et
+l'interface annonce ce que chacune débloque, plutôt que de laisser ces écrans
+échouer plus tard :
+
+- **Connect** — galerie, ventes, solde. Sans mot de passe ni code 2FA.
+- **Mot de passe** — ajoute compos, divisions et gains.
+
+### Le modèle ignorait complètement l'adversaire
+
+Vérifié avant de coder : zéro occurrence d'adversaire, de difficulté ou de
+domicile dans le calcul. Un attaquant contre le leader et contre le dernier
+avaient rigoureusement la même projection.
+
+`Club.domesticLeagueRanking` existe déjà côté Sorare (Man City 2ᵉ, Paris FC
+11ᵉ — vérifié), et un seul appel par game week donne tous les matchs avec le
+classement des deux clubs. Aucune dépendance externe.
+
+L'ajustement est **volontairement bridé** à ±12 % pour l'écart de classement
+et ±3 % pour le domicile : la position au classement est un indicateur
+grossier, non comparable d'un championnat à l'autre. Seul l'écart *à
+l'intérieur d'un match* est lu, et il est appliqué **après** l'intégration de
+la projection Sorare — sinon l'adversaire serait compté deux fois pour les
+joueurs que Sorare couvre.
+
+### Recherche open source : rien à intégrer, et pourquoi
+
+ClubElo (force des équipes) est gratuit mais en HTTP simple et injoignable
+depuis l'environnement de test — non validable, donc non retenu. Understat
+(xG) n'a pas d'API officielle : du scraping, avec le même problème de CGU que
+celui déjà documenté pour `external_probable`. StatsBomb est historique,
+openfootball redondant avec Sorare, `sorarepy` est en Python.
+
+La brique qui manquait était déjà dans l'API Sorare.
+
 ## 2026-08-16 — Fraîcheur, transferts, vitesse et bilan de saison
 
 Les quatre points restants du test d'usage.

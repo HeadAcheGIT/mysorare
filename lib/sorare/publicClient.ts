@@ -95,7 +95,7 @@ query PlayersBySlug($slugs: [String!]!) {
     avatarPictureUrl
     squaredPictureUrl
     country { code }
-    activeClub { ... on Club { slug name pictureUrl country { code } domesticLeague { slug displayName } } }
+    activeClub { ... on Club { slug name pictureUrl country { code } domesticLeagueRanking domesticLeague { slug displayName } } }
     activeInjuries { status expectedEndDate }
     activeSuspensions { reason endDate }
     nextClassicFixtureProjectedScore
@@ -122,6 +122,30 @@ query PlayersBySlug($slugs: [String!]!) {
  * unauthenticated, unlike the per-game schedule (`competitionGames` scores
  * ~940 complexity against the 500 cap, so fixtures-with-games needs an API key).
  */
+/**
+ * Every game of one game week with both clubs' league positions — the whole
+ * fixture-difficulty signal in a single call, where asking per player would be
+ * one paced request each.
+ *
+ * League position is a coarse proxy for strength and it isn't comparable
+ * across competitions (second in Norway isn't second in the Premier League),
+ * so only the *gap between the two clubs in a given match* is used, and the
+ * adjustment it drives is deliberately bounded — see fixtureDifficultyFactor.
+ */
+export const FIXTURE_GAMES_PUBLIC = `
+query FixtureGames($slug: String!) {
+  so5 {
+    so5Fixture(slug: $slug) {
+      games {
+        id
+        date
+        homeTeam { ... on Club { slug domesticLeagueRanking } }
+        awayTeam { ... on Club { slug domesticLeagueRanking } }
+      }
+    }
+  }
+}`;
+
 export const OPEN_FIXTURES_PUBLIC = `
 query OpenFixtures {
   so5 {

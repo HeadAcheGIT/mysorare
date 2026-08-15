@@ -179,7 +179,13 @@ export default function Page() {
 
   // Settings
   const [logs, setLogs] = useState<{ job: string; status: string; detail: string | null; ranAt: string }[]>([]);
-  const [tokenStatus, setTokenStatus] = useState<{ signedIn: boolean; expiresAt: string | null } | null>(null);
+  const [tokenStatus, setTokenStatus] = useState<{
+    signedIn: boolean;
+    expiresAt: string | null;
+    kind: "oauth" | "jwt" | null;
+    nickname: string | null;
+    canReadLineups: boolean;
+  } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [checkingLineups, setCheckingLineups] = useState(false);
   const [syncingFriendlies, setSyncingFriendlies] = useState(false);
