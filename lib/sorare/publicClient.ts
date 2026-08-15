@@ -168,6 +168,42 @@ query CardOwnership($slugs: [String!]!) {
   }
 }`;
 
+/**
+ * Open auctions, newest activity first.
+ *
+ * Sorare offers no per-player filter here, so watching specific players means
+ * scanning this feed and matching slugs locally — bounded by the caller rather
+ * than walked to the end, since it covers every football auction of the last
+ * ten days.
+ *
+ * `bestBid.amounts` carries EUR once someone has bid; before that only the wei
+ * `currentPrice` exists and has to be converted.
+ */
+export const LIVE_AUCTIONS_PUBLIC = `
+query LiveAuctions($first: Int!, $after: String) {
+  tokens {
+    liveAuctions(first: $first, after: $after, sport: FOOTBALL) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        open
+        endDate
+        bidsCount
+        currency
+        currentPrice
+        bestBid { amounts { eurCents } }
+        anyCards {
+          slug
+          rarityTyped
+          seasonYear
+          inSeasonEligible
+          serialNumber
+          anyPlayer { slug displayName }
+        }
+      }
+    }
+  }
+}`;
+
 export const OPEN_FIXTURES_PUBLIC = `
 query OpenFixtures {
   so5 {

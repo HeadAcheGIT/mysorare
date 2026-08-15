@@ -21,6 +21,7 @@ import PlayerBadges from "./components/PlayerBadges";
 import DivisionBoard from "./components/DivisionBoard";
 import InSeasonAdvisor from "./components/InSeasonAdvisor";
 import SeasonReport from "./components/SeasonReport";
+import AuctionWatch from "./components/AuctionWatch";
 
 type SavedLineup = {
   id: number;
@@ -1002,6 +1003,13 @@ export default function Page() {
               </>
             )}
 
+            </div>
+
+            <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
+              Enchères sur mes joueurs suivis
+            </h2>
+            <div className="mb-6">
+              <AuctionWatch onSelectPlayer={openPlayer} onError={setError} />
             </div>
 
             <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">Mes listes de suivi</h2>
