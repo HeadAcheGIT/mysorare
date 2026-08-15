@@ -3,6 +3,41 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-15 (soir) — Test d'usage : le scouting recommandait un gardien remplaçant
+
+Passage en revue du site en se mettant à la place d'un manager qui cherche à
+faire du ROI, sur de vraies données Ligue 1.
+
+### Le scouting classait sur la forme brute, sans regarder le temps de jeu
+
+Premier résultat retourné : **Mathieu Gorgelin, gardien remplaçant du RC Lens,
+1 match joué sur 15**, en tête du classement « meilleure forme » avec L5 85 —
+une apparition, un gros score, et rien pour dire qu'il ne joue jamais. Suivre
+cette recommandation fait perdre de l'argent, soit exactement l'inverse de ce
+à quoi l'écran sert.
+
+La forme est désormais pondérée par le temps de jeu (`lib/scoutingRank.ts`)
+pour le **classement uniquement** : la L5 réelle reste affichée, rien n'est
+caché. Un badge « peu de matchs » signale les moyennes qui reposent sur trop
+peu de rencontres.
+
+### Il manquait la seule colonne qui répond à la question posée
+
+L'écran affichait forme, temps de jeu, prix et tendance côte à côte, en
+laissant le rapprochement à faire de tête. Ajout de **pts/€** (forme pondérée
+par euro), qui devient le tri par défaut.
+
+Effet sur le même jeu de données : Ismaël Boura (Troyes, 9/15, 5,21 €) passe
+premier à 8,90 pts/€, tandis que Lassine Sinayoko (14/15, 52,31 €) tombe
+dernier à 1,10 pts/€ — il était le choix « évident » avant.
+
+### Les erreurs techniques remontaient brutes à l'écran
+
+Sans base de données joignable, la bannière affichait un extrait de stack
+Prisma avec les numéros de ligne du schéma. Traduit en messages actionnables
+(base injoignable, limite de requêtes Sorare, réseau, requête refusée), le
+détail restant dans les logs serveur.
+
 ## 2026-08-15 — Les probabilités de titularisation étaient fausses
 
 « J'ai cru voir que les probabilités sont pas OK ». Elles ne l'étaient pas, et

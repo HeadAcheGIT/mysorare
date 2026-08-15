@@ -7,6 +7,7 @@ import { formatMoney as money, relativeDate as daysAgo } from "@/lib/format";
 import { scoreColor, SCORE_COLOR_CLASS } from "@/lib/types";
 import SortControl, { type SortDirection } from "./SortControl";
 import PlayerBadges from "./PlayerBadges";
+import { reliableForm, valuePerEuro, isThinSample } from "@/lib/scoutingRank";
 
 type Money = { amount: number; currency: string } | null;
 
@@ -40,9 +41,13 @@ type League = { slug: string; name: string; country: string | null };
 /** Leagues worth putting first for a French manager; the rest stay alphabetical. */
 const PINNED = ["ligue-1-fr", "premier-league-gb-eng", "laliga-es", "serie-a-it", "bundesliga-de", "ligue-2-fr"];
 
-type ScoutSortKey = "form" | "played" | "price" | "trend" | "name" | "u23";
+type ScoutSortKey = "value" | "form" | "played" | "price" | "trend" | "name" | "u23";
 
 const SCOUT_SORTS: [ScoutSortKey, string][] = [
+  // Value first, and the default: "what do I get per euro" is the question a
+  // scouting screen exists to answer. Form alone ranked a reserve keeper who
+  // had played once above every regular starter — see lib/scoutingRank.ts.
+  ["value", "Rapport qualité/prix"],
   ["form", "Forme (L5)"],
   ["played", "Régularité"],
   ["price", "Prix"],
@@ -52,6 +57,7 @@ const SCOUT_SORTS: [ScoutSortKey, string][] = [
 ];
 
 const SCOUT_DEFAULT_DIRECTION: Record<ScoutSortKey, SortDirection> = {
+  value: "desc",
   form: "desc",
   played: "desc",
   price: "asc", // shopping list — cheapest first by default
@@ -122,7 +128,7 @@ export default function Scouting({
   const [players, setPlayers] = useState<ScoutPlayer[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [sort, setSort] = useState<ScoutSortKey>("form");
+  const [sort, setSort] = useState<ScoutSortKey>("value");
   const [direction, setDirection] = useState<SortDirection>(SCOUT_DEFAULT_DIRECTION.form);
 
   useEffect(() => {
@@ -164,7 +170,8 @@ export default function Scouting({
       if (sort === "price") return compareNullable(a.inSeasonTrend?.lastSale?.amount, b.inSeasonTrend?.lastSale?.amount, direction);
       if (sort === "trend") return compareNullable(a.inSeasonTrend?.trendPct, b.inSeasonTrend?.trendPct, direction);
       if (sort === "u23") return compareNullable(u23SortValue(a.birthDate), u23SortValue(b.birthDate), direction);
-      return compareNullable(a.avgL5, b.avgL5, direction);
+      if (sort === "value") return compareNullable(valuePerEuro(a), valuePerEuro(b), direction);
+      return compareNullable(reliableForm(a), reliableForm(b), direction);
     });
   }, [players, sort, direction]);
 
@@ -303,8 +310,29 @@ export default function Scouting({
                     {POSITION_SHORT[p.position] ?? p.position}
                     {p.club ? ` · ${p.club}` : ""}
                   </p>
-                  <p className="font-mono text-[11px] text-muted mt-0.5">
-                    L5 <span className={p.avgL5 != null ? SCORE_COLOR_CLASS[scoreColor(p.avgL5)] : ""}>{p.avgL5?.toFixed(0) ?? "—"}</span> · joué {p.app15 ?? "—"}/15
+                  <p className="font-mono text-[11px] text-muted mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    <span>
+                      L5{" "}
+                      <span className={p.avgL5 != null ? SCORE_COLOR_CLASS[scoreColor(p.avgL5)] : ""}>
+                        {p.avgL5?.toFixed(0) ?? "—"}
+                      </span>{" "}
+                      · joué {p.app15 ?? "—"}/15
+                    </span>
+                    {/* The average is real, the confidence in it isn't — say so
+                        rather than letting a one-game score read as form. */}
+                    {isThinSample(p.app15) && (
+                      <span
+                        className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-warn/15 text-warn"
+                        title="Trop peu de matchs derrière cette moyenne pour s'y fier — le classement en tient compte."
+                      >
+                        peu de matchs
+                      </span>
+                    )}
+                    {valuePerEuro(p) != null && (
+                      <span className="shrink-0 text-muted/70" title="Points de forme (pondérés par le temps de jeu) par euro">
+                        {valuePerEuro(p)!.toFixed(2)} pts/€
+                      </span>
+                    )}
                   </p>
                 </div>
 
