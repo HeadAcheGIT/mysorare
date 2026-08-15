@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { assertConfigured, config } from "../config";
 import { prisma } from "../prisma";
-import { refreshAccessToken } from "./oauth";
+import { refreshAccessToken, isOAuthConfigured } from "./oauth";
 
 export class SorareAuthError extends Error {}
 
@@ -146,9 +146,21 @@ export async function tokenStatus(): Promise<{
    * reads this instead of hiding the limitation until a request fails.
    */
   canReadLineups: boolean;
+  /** Whether Sorare Connect can be offered at all, so the button isn't a dead end. */
+  oauthConfigured: boolean;
 }> {
+  const oauthConfigured = isOAuthConfigured();
   const row = await prisma.tokenCache.findUnique({ where: { id: 1 } });
-  if (!row) return { signedIn: false, expiresAt: null, kind: null, nickname: null, canReadLineups: false };
+  if (!row) {
+    return {
+      signedIn: false,
+      expiresAt: null,
+      kind: null,
+      nickname: null,
+      canReadLineups: false,
+      oauthConfigured,
+    };
+  }
 
   const kind = row.kind === "oauth" ? "oauth" : "jwt";
   // An expired OAuth access token is still a live session while a refresh
@@ -161,6 +173,7 @@ export async function tokenStatus(): Promise<{
     kind,
     nickname: row.nickname,
     canReadLineups: signedIn && kind === "jwt",
+    oauthConfigured,
   };
 }
 

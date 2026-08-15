@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { authorizeUrl, isOAuthConfigured } from "@/lib/sorare/oauth";
-import { ApiError, withErrorHandling } from "@/lib/apiHandler";
+import { withErrorHandling } from "@/lib/apiHandler";
 
 export const dynamic = "force-dynamic";
 
@@ -17,16 +17,17 @@ const STATE_TTL_SECONDS = 600;
  * their Sorare account.
  */
 export const GET = withErrorHandling(async (req: NextRequest) => {
+  const origin = new URL(req.url).origin;
+
+  // The browser navigates here, so this route has to behave like a page:
+  // answering with JSON left the user staring at a raw error object in a tab
+  // with no way back. Every outcome returns to the app, which shows the
+  // message in context.
   if (!isOAuthConfigured()) {
-    throw new ApiError(
-      "Sorare Connect n'est pas configuré. Crée une application sur sorare.com/settings/developer, " +
-        "puis renseigne SORARE_OAUTH_CLIENT_ID et SORARE_OAUTH_CLIENT_SECRET.",
-      501
-    );
+    return NextResponse.redirect(new URL("/?sorare=non_configure", origin));
   }
 
   const state = randomBytes(16).toString("hex");
-  const origin = new URL(req.url).origin;
 
   const res = NextResponse.redirect(authorizeUrl(origin, state));
   res.cookies.set("sorare_oauth_state", state, {

@@ -35,7 +35,15 @@ type SavedLineup = {
 const msg = (e: unknown) => (e instanceof ApiFetchError || e instanceof Error ? e.message : "Erreur inattendue");
 
 export default function Page() {
-  const [tab, setTab] = useState<"week" | "gallery" | "lineup" | "market" | "history" | "settings">("week");
+  const [tab, setTab] = useState<"week" | "gallery" | "lineup" | "market" | "history" | "settings">(
+    // Coming back from Sorare Connect: the outcome is rendered by SorareLogin,
+    // which only exists on the Données tab. Landing on Semaine instead left the
+    // user on a normal-looking screen with no idea what had just happened.
+    () =>
+      typeof window !== "undefined" && new URLSearchParams(window.location.search).has("sorare")
+        ? "settings"
+        : "week"
+  );
   const [gameWeek, setGameWeek] = useState<GameWeek | null>(null);
   const [insights, setInsights] = useState<InsightGroup[]>([]);
   const [unenriched, setUnenriched] = useState(0);
@@ -185,6 +193,7 @@ export default function Page() {
     kind: "oauth" | "jwt" | null;
     nickname: string | null;
     canReadLineups: boolean;
+    oauthConfigured: boolean;
   } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [checkingLineups, setCheckingLineups] = useState(false);

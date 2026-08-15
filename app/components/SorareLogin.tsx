@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 
 type Status = {
@@ -10,6 +10,21 @@ type Status = {
   nickname: string | null;
   /** False on OAuth: its scope excludes future line-ups and rewards. */
   canReadLineups: boolean;
+  oauthConfigured: boolean;
+};
+
+/** What the OAuth routes redirect back with, in the manager's language. */
+const OAUTH_OUTCOME: Record<string, { text: string; tone: "ok" | "warn" }> = {
+  connecte: { text: "Sorare Connect actif.", tone: "ok" },
+  refuse: { text: "Connexion refusée sur Sorare.", tone: "warn" },
+  invalide: { text: "Retour de connexion invalide ou expiré — relance la connexion.", tone: "warn" },
+  echec: { text: "Sorare a refusé l'échange du code. Vérifie l'URL de callback de ton application.", tone: "warn" },
+  non_configure: {
+    text:
+      "Sorare Connect n'est pas configuré : crée une application sur sorare.com/settings/developer, " +
+      "puis renseigne SORARE_OAUTH_CLIENT_ID et SORARE_OAUTH_CLIENT_SECRET dans Vercel et redéploie.",
+    tone: "warn",
+  },
 };
 
 /**
@@ -34,6 +49,7 @@ export default function SorareLogin({
   const [challenge, setChallenge] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [oauthOutcome, setOauthOutcome] = useState<{ text: string; tone: "ok" | "warn" } | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -64,6 +80,27 @@ export default function SorareLogin({
       setBusy(false);
     }
   }
+
+  /**
+   * The OAuth routes hand their result back as `?sorare=…`. Nothing read it,
+   * so even a successful connection said nothing at all. Cleared from the URL
+   * once shown, otherwise a refresh would keep replaying an old outcome.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get("sorare");
+    if (!outcome) return;
+
+    setOauthOutcome(OAUTH_OUTCOME[outcome] ?? null);
+    params.delete("sorare");
+    const qs = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+
+    if (outcome === "connecte") onSignedIn();
+    // onSignedIn is stable enough here; re-running on it would re-read a URL
+    // that has already been cleaned.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function disconnect() {
     setBusy(true);
@@ -113,13 +150,36 @@ export default function SorareLogin({
           </p>
         )}
 
-        <div className="flex gap-2">
-          <a
-            href="/api/sorare/oauth/start"
-            className="flex-1 text-center text-xs bg-flood text-ink font-bold rounded-md px-3 py-2"
+        {oauthOutcome && (
+          <p
+            className={`text-[11px] font-mono rounded-md px-2.5 py-2 border ${
+              oauthOutcome.tone === "ok"
+                ? "text-ok bg-ok/10 border-ok/40"
+                : "text-warn bg-warn/10 border-warn/40"
+            }`}
           >
-            Sorare Connect
-          </a>
+            {oauthOutcome.text}
+          </p>
+        )}
+
+        <div className="flex gap-2">
+          {/* Offering a button that can only dead-end is worse than not
+              offering it — the status says whether Connect is set up. */}
+          {status?.oauthConfigured === false ? (
+            <span
+              className="flex-1 text-center text-xs border border-line rounded-md px-3 py-2 text-muted"
+              title="Renseigne SORARE_OAUTH_CLIENT_ID et SORARE_OAUTH_CLIENT_SECRET pour l'activer"
+            >
+              Connect non configuré
+            </span>
+          ) : (
+            <a
+              href="/api/sorare/oauth/start"
+              className="flex-1 text-center text-xs bg-flood text-ink font-bold rounded-md px-3 py-2"
+            >
+              Sorare Connect
+            </a>
+          )}
           <button
             onClick={() => setOpen(true)}
             className="flex-1 text-xs border border-line rounded-md px-3 py-2"
@@ -128,8 +188,9 @@ export default function SorareLogin({
           </button>
         </div>
         <p className="text-[10px] font-mono text-muted">
-          Connect : galerie, ventes, solde — sans mot de passe ni code 2FA. Mot de passe : ajoute les compos,
-          les divisions et les gains.
+          {status?.oauthConfigured === false
+            ? "Sorare Connect s'active en créant une application sur sorare.com/settings/developer (callback : /api/sorare/oauth/callback), puis en renseignant les deux variables dans Vercel."
+            : "Connect : galerie, ventes, solde — sans mot de passe ni code 2FA. Mot de passe : ajoute les compos, les divisions et les gains."}
         </p>
       </div>
     );
