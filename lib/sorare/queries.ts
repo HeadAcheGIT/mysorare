@@ -284,6 +284,44 @@ query CardsInLineups {
 }`;
 
 /**
+ * The manager's own watchlists as kept on Sorare.
+ *
+ * Found by probing: the schema isn't introspectable, but Sorare's validator
+ * suggests near-misses, and `watchlists` answered "Did you mean `myWatchlists`?".
+ * Neither `myWatchlists` nor `playersPanel` accepts pagination arguments — both
+ * are plain lists, not connections, so there is no cursor to follow.
+ *
+ * `playersPanel` returns `CommonPlayer`, the same wrapper the market search
+ * already unwraps via `anyPlayer` (see lib/services/market.ts).
+ *
+ * The selection is deliberately minimal: with `domesticLeague` and `birthDay`
+ * included this measured 502 against the unauthenticated cap of 500. Neither is
+ * a loss — the watchlist endpoint joins league and birth date live from
+ * Player/Club precisely so a stored club can't go stale after a transfer (see
+ * app/api/watchlist/route.ts), so fetching them here would only duplicate a
+ * value the app already resolves better elsewhere.
+ */
+export const MY_WATCHLISTS = `
+query MyWatchlists {
+  currentUser {
+    myWatchlists(sport: FOOTBALL) {
+      id
+      slug
+      title
+      createdAt
+      playersPanel {
+        anyPlayer {
+          slug
+          displayName
+          anyPositions
+          activeClub { ... on Club { name } }
+        }
+      }
+    }
+  }
+}`;
+
+/**
  * Spendable balance, for the in-season advisor's "can I afford to close this
  * gap" verdict. `availableBalances` splits cash from crypto: `eurCents` is the
  * fiat wallet, `wei` the ETH one with its own EUR equivalent attached — the

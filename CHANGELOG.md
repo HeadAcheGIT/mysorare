@@ -3,6 +3,39 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-19 (soir) — Tes watchlists Sorare deviennent celles de l'app
+
+La watchlist de l'app était une seconde liste, tenue en parallèle de celle de
+Sorare : chaque cible devait être ressaisie à la main. Comme c'est elle qui
+alimente la surveillance des enchères, tout joueur suivi sur Sorare mais absent
+ici n'était tout simplement jamais surveillé.
+
+### Le champ existe, mais il fallait le trouver
+
+Le schéma Sorare n'est pas introspectable (`__type` est désactivé). En
+revanche son validateur suggère les champs proches : `watchlists` répond
+« Did you mean `myWatchlists`? ». De proche en proche :
+
+    currentUser.myWatchlists(sport: FOOTBALL) → [Watchlist]
+    Watchlist { id, slug, title, createdAt, sport, playersPanel }
+    playersPanel → [CommonPlayer] → anyPlayer
+
+Ni `myWatchlists` ni `playersPanel` n'accepte d'arguments de pagination : ce
+sont des listes simples, un seul appel suffit.
+
+Sélection réduite au strict nécessaire : avec le championnat et la date de
+naissance, la requête mesurait **502** pour un plafond de 500. Aucune perte —
+l'endpoint watchlist les rejoint déjà en direct depuis `Player`/`Club`,
+justement pour qu'un club stocké ne devienne pas faux après un transfert.
+
+### Source, pas miroir
+
+L'import **ajoute et met à jour, ne supprime jamais**. Un import à sens unique
+ne sait pas distinguer « retiré sur Sorare » de « ajouté ici » : mirroir les
+suppressions détruirait les listes construites dans l'app. Les listes sont
+appariées par nom, donc relancer l'import met à jour au lieu d'empiler des
+doublons.
+
 ## 2026-08-19 — La valorisation atteint enfin toute l'app
 
 La valorisation existait depuis deux jours mais ne servait qu'au scouting et à

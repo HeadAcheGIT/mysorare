@@ -202,6 +202,7 @@ export default function Page() {
   const [syncingForm, setSyncingForm] = useState(false);
   const [syncingAcquisitions, setSyncingAcquisitions] = useState(false);
   const [syncingValuations, setSyncingValuations] = useState(false);
+  const [importingWatchlists, setImportingWatchlists] = useState(false);
   const [notice, setNotice] = useState("");
 
   // Market
@@ -738,6 +739,38 @@ export default function Page() {
     }
   }
 
+  /**
+   * Pulls the manager's Sorare watchlists in as local lists.
+   *
+   * One request — neither the lists nor their players paginate — so no batching
+   * loop here, unlike the gallery syncs.
+   */
+  async function importWatchlists() {
+    setImportingWatchlists(true);
+    setNotice("");
+    try {
+      const res = await apiFetch<{
+        lists: number;
+        groupsCreated: number;
+        added: number;
+        updated: number;
+        details: { name: string; added: number; updated: number }[];
+      }>("/api/watchlist/import", { method: "POST" });
+
+      await loadWatchlist();
+      setNotice(
+        res.lists === 0
+          ? "Aucune watchlist trouvée sur ton compte Sorare."
+          : `${res.lists} liste(s) Sorare : ${res.added} joueur(s) ajouté(s), ${res.updated} mis à jour` +
+              (res.groupsCreated > 0 ? `, ${res.groupsCreated} liste(s) créée(s) ici.` : ".")
+      );
+    } catch (err) {
+      setError(msg(err));
+    } finally {
+      setImportingWatchlists(false);
+    }
+  }
+
   async function deleteWatchlistGroup(id: number) {
     const group = watchlistGroups.find((g) => g.id === id);
     const count = group?.items.length ?? 0;
@@ -1099,6 +1132,20 @@ export default function Page() {
               >
                 + Liste
               </button>
+            </div>
+
+            <div className="flex items-center gap-2 mb-4">
+              <button
+                onClick={importWatchlists}
+                disabled={importingWatchlists}
+                className="text-xs border border-line rounded-md px-3 py-2 disabled:opacity-50"
+              >
+                {importingWatchlists ? "Import…" : "⇩ Importer mes watchlists Sorare"}
+              </button>
+              <p className="font-mono text-[10px] text-muted flex-1">
+                Reprend tes listes Sorare telles quelles. Ajoute et met à jour, ne supprime jamais — tes
+                listes créées ici sont conservées. Connexion Sorare requise.
+              </p>
             </div>
 
             {watchlist.length > 0 && (
