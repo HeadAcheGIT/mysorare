@@ -121,6 +121,15 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
           {/* Only worth showing next to the starting probability, and only when
               the two actually differ — for a nailed-on starter they're the
               same number and the extra line is noise. */}
+          {/* The model already explains itself — thin sample, injury, fixture
+              difficulty, Sorare's projection blended in — but nothing rendered
+              it, so none of that reasoning was checkable. */}
+          {card.note && (
+            <p className="font-mono text-[11px] text-muted bg-ink rounded-md px-3 py-2">
+              {card.note}
+            </p>
+          )}
+
           {card.pPlay != null && card.pStart != null && card.pPlay - card.pStart >= 0.1 && (
             <p className="font-mono text-[11px] text-muted">
               Entre en jeu {Math.round(card.pPlay * 100)}% du temps, titulaire{" "}
