@@ -20,6 +20,7 @@ import PlayerPopup from "./components/PlayerPopup";
 import PlayerBadges from "./components/PlayerBadges";
 import DivisionBoard from "./components/DivisionBoard";
 import InSeasonAdvisor from "./components/InSeasonAdvisor";
+import SeasonReport from "./components/SeasonReport";
 
 type SavedLineup = {
   id: number;
@@ -1069,6 +1070,14 @@ export default function Page() {
 
         {tab === "history" && (
           <section aria-label="Historique" className="space-y-3">
+            <div className="mb-6">
+              <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
+                Bilan de la saison
+              </h2>
+              <SeasonReport onError={setError} />
+            </div>
+
+            <h2 className="font-display uppercase text-sm tracking-wide text-muted">Ventes</h2>
             <p className="font-mono text-xs text-muted mb-2">
               Cartes disparues de ta galerie — vendues ou transférées. « Synchroniser » va chercher tes vraies
               ventes chez Sorare (prix et date confirmés, historique complet) ; sans connexion, seule ta dernière

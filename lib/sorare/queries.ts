@@ -248,6 +248,33 @@ query PreviewLineup($lb: String!, $appearances: [So5AppearanceInput!]!) {
   }
 }`;
 
+/**
+ * Where each line-up finished for a game week and what it paid.
+ *
+ * The only record of real money in this app — every other number is a
+ * projection. `so5Rewards` is empty until a fixture closes, which is expected:
+ * a game week in progress has a ranking but no settled reward yet.
+ */
+export const MY_REWARDS_FOR_FIXTURE = `
+query MyRewardsForFixture($slug: String!) {
+  so5 {
+    so5Fixture(slug: $slug) {
+      slug
+      gameWeek
+      mySo5Rankings {
+        id
+        ranking
+        score
+        so5Leaderboard { slug displayName(short: true) division }
+        so5Rewards {
+          amount { eurCents }
+          rewardCards { anyCard { slug } }
+        }
+      }
+    }
+  }
+}`;
+
 /** Card slugs already engaged in a live or upcoming line-up — powers the gallery's "en compo" flag. */
 export const CARDS_IN_LINEUPS = `
 query CardsInLineups {

@@ -3,6 +3,41 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-16 — Fraîcheur, transferts, vitesse et bilan de saison
+
+Les quatre points restants du test d'usage.
+
+### Une moyenne de forme ne dit pas de quand elle date
+
+Lassine Sinayoko s'affichait « L5 74 · joué 14/15 » comme une donnée courante.
+Son dernier match remontait à 89 jours (trêve estivale), et il avait été joué
+**sous les couleurs d'Auxerre**, alors que la fiche indique Paris FC depuis son
+transfert. Deux pièges silencieux, dans les deux cas la statistique décrit
+autre chose que ce qu'on croit lire.
+
+Les badges « pas joué depuis N j » et « stats à \<ancien club\> » apparaissent
+désormais sur la ligne. Les deux signaux voyagent sur la requête par joueur
+**déjà effectuée** pour les prix — coût réseau nul.
+
+### Le scouting ne montrait rien pendant une minute
+
+La liste et les prix étaient récupérés d'un bloc, or les prix coûtent une
+requête par joueur cadencée à ~3 s. Séparés en deux passes : la liste arrive en
+**3,2 s** (mesuré, contre ~60 s), triable immédiatement, et chaque ligne se
+complète derrière avec un décompte des joueurs restants.
+
+### On ne savait pas si tout ça rapportait
+
+Rien dans l'app ne montrait d'argent réellement gagné — tout était projection.
+Nouveau bilan dans Historique, alimenté par `mySo5Rankings` / `so5Rewards` :
+classement, score et gains par game week, totaux de saison, et le **net face au
+coût connu de la galerie**.
+
+Le net reste vide tant que les prix d'achat sont inconnus, plutôt que d'afficher
+les gains seuls comme un bénéfice — ce serait flatteur d'exactement ce que les
+cartes ont coûté. Une game week jouée mais non encore payée est marquée « en
+attente » au lieu d'être comptée à 0 €.
+
 ## 2026-08-15 (soir) — Test d'usage : le scouting recommandait un gardien remplaçant
 
 Passage en revue du site en se mettant à la place d'un manager qui cherche à

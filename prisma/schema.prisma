@@ -228,6 +228,30 @@ model AlignedLineup {
   @@index([playerSlug])
 }
 
+/// What a game week actually returned: where each line-up finished and what it
+/// paid. Sourced from the authenticated `mySo5Rankings` / `so5Rewards`, which
+/// is the only record of real earnings — everything else in this app is a
+/// projection. Without it there is no way to answer "is this gallery paying
+/// for itself", which is the whole point of playing.
+model SeasonReward {
+  /// Sorare's own ranking id, stable across re-syncs.
+  id              String   @id
+  fixtureSlug     String
+  gameWeek        Int?
+  leaderboardSlug String
+  leaderboardName String?
+  division        Int?
+  ranking         Int?
+  score           Float?
+  /// Cash reward in EUR. Null when the reward was cards only, 0 when nothing was won.
+  rewardEur       Float?
+  /// How many cards the finish paid out — the other half of the return.
+  rewardCards     Int      @default(0)
+  syncedAt        DateTime @default(now())
+
+  @@index([fixtureSlug])
+}
+
 /// A Sorare "league track" for one game week — the level at which you enter
 /// teams ("Champion Europe", "Contender", …), from the authenticated
 /// `so5Fixture.mySo5LeagueTracks`. This is the real structure of the account,

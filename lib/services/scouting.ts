@@ -48,6 +48,14 @@ export interface ScoutPlayer {
   /// buying what you own.
   ownedCards: number;
   ownedInSeason: number;
+  /// ISO date of his most recent game. Null until the per-player pass has run.
+  /// Without it, a form average from before a three-month break reads as
+  /// current — which is exactly how you buy a player who hasn't kicked a ball
+  /// since May.
+  lastPlayedAt: string | null;
+  /// The club he played that last game for. When it differs from `club`, the
+  /// form and appearance figures describe his previous team, not this one.
+  clubAtLastGame: { slug: string; name: string } | null;
 }
 
 export interface League {
@@ -130,13 +138,58 @@ query PlayerSales($slug: String!, $rarity: Rarity!) {
     tokenPrices(rarity: $rarity, seasonEligibility: IN_SEASON, first: 20) {
       nodes { date amounts { eurCents usdCents referenceCurrency } }
     }
+    # Rides along on a request that was being made anyway, so both of these
+    # cost nothing extra. They answer the two questions a form average can't:
+    # is it recent, and is it even about the club shown? A player whose last
+    # game was three months ago, or who has since transferred, has stats that
+    # describe a different situation entirely.
+    anyPastGames(first: 1) {
+      nodes {
+        date
+        playerGameScore(playerSlug: $slug) {
+          anyPlayerGameStats {
+            ... on PlayerGameStats { anyTeam { ... on Club { slug name } } }
+          }
+        }
+      }
+    }
   }
 }`;
 
-async function getSalesTrend(slug: string, rarity: string): Promise<SaleTrend | null> {
+export interface PlayerContext {
+  trend: SaleTrend | null;
+  /** ISO date of the player's most recent game, whatever club it was for. */
+  lastPlayedAt: string | null;
+  /** The club he actually played that game for — not necessarily his current one. */
+  clubAtLastGame: { slug: string; name: string } | null;
+}
+
+async function getPlayerContext(slug: string, rarity: string): Promise<PlayerContext> {
   const data = await publicGraphql<{
-    anyPlayer: { tokenPrices: { nodes: { date: string; amounts: Amounts }[] } } | null;
+    anyPlayer: {
+      tokenPrices: { nodes: { date: string; amounts: Amounts }[] };
+      anyPastGames: {
+        nodes: {
+          date: string;
+          playerGameScore: { anyPlayerGameStats: { anyTeam: { slug: string; name: string } | null } | null } | null;
+        }[];
+      } | null;
+    } | null;
   }>(PLAYER_SALES_QUERY, { slug, rarity });
+
+  const lastGame = data.anyPlayer?.anyPastGames?.nodes?.[0] ?? null;
+  const team = lastGame?.playerGameScore?.anyPlayerGameStats?.anyTeam ?? null;
+
+  return {
+    trend: buildTrend(data),
+    lastPlayedAt: lastGame?.date ?? null,
+    clubAtLastGame: team ? { slug: team.slug, name: team.name } : null,
+  };
+}
+
+function buildTrend(data: {
+  anyPlayer: { tokenPrices: { nodes: { date: string; amounts: Amounts }[] } } | null;
+}): SaleTrend | null {
 
   // API returns oldest-first; newest-first reads better and matches every
   // other "recent" list in the app.
@@ -172,7 +225,8 @@ export async function listLeagues(): Promise<League[]> {
 export async function scoutLeague(
   leagueSlug: string,
   rarity: string,
-  limit: number
+  limit: number,
+  enrich = true
 ): Promise<{ league: string | null; players: ScoutPlayer[] }> {
   const list = await publicGraphql<{
     football: { competition: { displayName: string; playersByLastFiveAverage: { nodes: { slug: string }[] } } | null };
@@ -220,24 +274,39 @@ export async function scoutLeague(
       inSeasonTrend: null,
       ownedCards: o?.total ?? 0,
       ownedInSeason: o?.inSeason ?? 0,
+      lastPlayedAt: null,
+      clubAtLastGame: null,
     };
   });
 
-  // Best form first — the order you'd shop in, and the order sales history is
-  // fetched in, so if time runs out it's the least interesting players that
-  // go without a trend.
+  // Best form first — the order you'd shop in, and the order the per-player
+  // pass runs in, so if time runs out it's the least interesting players that
+  // go without prices.
   players.sort((a, b) => (b.avgL5 ?? -1) - (a.avgL5 ?? -1));
 
-  // Sale history is one request per player — `tokenPrices` can't be batched
-  // (see PLAYER_SALES_QUERY) — so it's sequential and time-boxed rather than
-  // risking the route's 60s limit. Left as null past the cutoff rather than
-  // failing the whole scout: a shorter list beats no list.
-  const started = Date.now();
-  const budgetMs = 40_000;
-  for (const p of players) {
-    if (Date.now() - started > budgetMs) break;
-    p.inSeasonTrend = await getSalesTrend(p.slug, rarity).catch(() => null);
+  // The per-player pass is one request each — `tokenPrices` can't be batched
+  // (see PLAYER_SALES_QUERY) — and the public API is paced at one call every
+  // ~3s, so filling fifteen players takes the best part of a minute. `enrich:
+  // false` returns the list without it, which is what the UI asks for first so
+  // the screen is usable in seconds instead of blank; it then fills each row
+  // in via scoutPlayerContext below.
+  if (enrich) {
+    const started = Date.now();
+    const budgetMs = 40_000;
+    for (const p of players) {
+      if (Date.now() - started > budgetMs) break;
+      const ctx = await getPlayerContext(p.slug, rarity).catch(() => null);
+      if (!ctx) continue;
+      p.inSeasonTrend = ctx.trend;
+      p.lastPlayedAt = ctx.lastPlayedAt;
+      p.clubAtLastGame = ctx.clubAtLastGame;
+    }
   }
 
   return { league: comp?.displayName ?? null, players };
+}
+
+/** One player's prices and recency, for the UI's progressive fill. */
+export function scoutPlayerContext(slug: string, rarity: string): Promise<PlayerContext> {
+  return getPlayerContext(slug, rarity);
 }

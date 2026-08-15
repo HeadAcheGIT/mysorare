@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import { POSITION_SHORT, compareNullable, u23SortValue } from "@/lib/types";
 import { formatMoney as money, relativeDate as daysAgo } from "@/lib/format";
@@ -34,9 +34,32 @@ type ScoutPlayer = {
   inSeasonTrend: SaleTrend | null;
   ownedCards: number;
   ownedInSeason: number;
+  lastPlayedAt: string | null;
+  clubAtLastGame: { slug: string; name: string } | null;
+};
+
+/** What the per-player pass fills in, once the list is already on screen. */
+type PlayerContext = {
+  trend: SaleTrend | null;
+  lastPlayedAt: string | null;
+  clubAtLastGame: { slug: string; name: string } | null;
 };
 
 type League = { slug: string; name: string; country: string | null };
+
+/**
+ * Beyond this, a form average describes a different period rather than current
+ * form — a summer break, a long injury. Set past a normal fortnight of
+ * international duty so it only fires on genuinely stale data.
+ */
+const STALE_DAYS = 45;
+
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return Math.floor((Date.now() - d.getTime()) / 86_400_000);
+}
 
 /** Leagues worth putting first for a French manager; the rest stay alphabetical. */
 const PINNED = ["ligue-1-fr", "premier-league-gb-eng", "laliga-es", "serie-a-it", "bundesliga-de", "ligue-2-fr"];
@@ -128,8 +151,11 @@ export default function Scouting({
   const [players, setPlayers] = useState<ScoutPlayer[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  /** Rows still waiting on their price/recency pass — drives the progress line. */
+  const [enriching, setEnriching] = useState(0);
+  const runToken = useRef(0);
   const [sort, setSort] = useState<ScoutSortKey>("value");
-  const [direction, setDirection] = useState<SortDirection>(SCOUT_DEFAULT_DIRECTION.form);
+  const [direction, setDirection] = useState<SortDirection>(SCOUT_DEFAULT_DIRECTION.value);
 
   useEffect(() => {
     apiFetch<{ leagues: League[] }>("/api/scouting")
@@ -143,18 +169,48 @@ export default function Scouting({
       });
   }, []);
 
+  /**
+   * Two passes on purpose. The list itself is one cheap request; prices and
+   * recency are one paced request per player, which for fifteen players is
+   * close to a minute. Fetching them inline meant a blank screen for that
+   * whole minute. Now the names, form and playing time land in a couple of
+   * seconds and each row fills in behind them.
+   */
   const run = useCallback(async () => {
     setLoading(true);
+    setEnriching(0);
     try {
       const data = await apiFetch<{ players: ScoutPlayer[] }>(
         `/api/scouting?league=${encodeURIComponent(league)}&rarity=${rarity}`
       );
       setPlayers(data.players);
       setLoaded(true);
+      setLoading(false);
+
+      // Guards against a slow fill still writing into the list after the user
+      // has switched league or rarity.
+      const token = ++runToken.current;
+      setEnriching(data.players.length);
+      for (const p of data.players) {
+        if (runToken.current !== token) return;
+        const ctx = await apiFetch<PlayerContext>(
+          `/api/scouting?player=${encodeURIComponent(p.slug)}&rarity=${rarity}`
+        ).catch(() => null);
+        if (runToken.current !== token) return;
+        setEnriching((n) => n - 1);
+        if (!ctx) continue;
+        setPlayers((prev) =>
+          prev.map((x) =>
+            x.slug === p.slug
+              ? { ...x, inSeasonTrend: ctx.trend, lastPlayedAt: ctx.lastPlayedAt, clubAtLastGame: ctx.clubAtLastGame }
+              : x
+          )
+        );
+      }
     } catch (err) {
       onError(err instanceof Error ? err.message : "Scouting indisponible");
-    } finally {
       setLoading(false);
+      setEnriching(0);
     }
   }, [league, rarity, onError]);
 
@@ -259,6 +315,13 @@ export default function Scouting({
         />
       )}
 
+      {enriching > 0 && (
+        <p className="font-mono text-[11px] text-muted">
+          Prix et fraîcheur en cours de chargement — {enriching} joueur{enriching > 1 ? "s" : ""} restant
+          {enriching > 1 ? "s" : ""}. La liste est déjà triable.
+        </p>
+      )}
+
       {noSales && (
         <p className="text-xs text-limited bg-limited/10 border border-limited/40 rounded-md px-2.5 py-2">
           Aucune vente in-season {rarity} conclue récemment sur ces joueurs.
@@ -326,6 +389,28 @@ export default function Scouting({
                         title="Trop peu de matchs derrière cette moyenne pour s'y fier — le classement en tient compte."
                       >
                         peu de matchs
+                      </span>
+                    )}
+                    {/* A form average is only about current form if he has
+                        played recently, and only about this club if he was at
+                        it. Both are silent traps otherwise. */}
+                    {(() => {
+                      const d = daysSince(p.lastPlayedAt);
+                      return d != null && d >= STALE_DAYS ? (
+                        <span
+                          className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-warn/15 text-warn"
+                          title={`Dernier match il y a ${d} jours — ces moyennes ne décrivent pas sa forme actuelle.`}
+                        >
+                          pas joué depuis {d} j
+                        </span>
+                      ) : null;
+                    })()}
+                    {p.clubAtLastGame && p.club && p.clubAtLastGame.name !== p.club && (
+                      <span
+                        className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-limited/15 text-limited"
+                        title={`Ces statistiques ont été réalisées à ${p.clubAtLastGame.name}, avant son arrivée à ${p.club}.`}
+                      >
+                        stats à {p.clubAtLastGame.name}
                       </span>
                     )}
                     {valuePerEuro(p) != null && (
