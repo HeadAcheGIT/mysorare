@@ -13,6 +13,13 @@ export interface RankablePlayer {
   avgL5: number | null;
   /** Appearances in the club's last 15 games — the sample behind avgL5. */
   app15: number | null;
+  /**
+   * What the card actually trades at (see lib/valuation.ts). Preferred over
+   * the last sale, which is one transaction: consecutive Maxime Lopez sales
+   * ran 6,38 €, 20,14 € then 8,33 €, so ranking on it would reshuffle the
+   * whole list on a single trade.
+   */
+  valuation?: { value: number | null } | null;
   inSeasonTrend?: { lastSale: { amount: number; currency: string } | null } | null;
 }
 
@@ -49,9 +56,15 @@ export function reliableForm(p: RankablePlayer): number | null {
  * Null without a completed sale to price against: an unpriced player must not
  * rank as infinitely good value.
  */
+export function priceOf(p: RankablePlayer): number | null {
+  // The valuation first; the last sale only as a fallback when there aren't
+  // enough trades to build one.
+  return p.valuation?.value ?? p.inSeasonTrend?.lastSale?.amount ?? null;
+}
+
 export function valuePerEuro(p: RankablePlayer): number | null {
   const form = reliableForm(p);
-  const price = p.inSeasonTrend?.lastSale?.amount;
+  const price = priceOf(p);
   if (form == null || price == null || price <= 0) return null;
   return form / price;
 }

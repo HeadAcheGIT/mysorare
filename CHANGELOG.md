@@ -3,6 +3,47 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-18 — La prime de lancement faussait toutes les valorisations
+
+Données brutes complètes fournies pour Maxime Lopez 2026-27 Limited, avec
+l.observation décisive : « à chaque saison, les premiers prix sont surévalués ».
+Vérifiée, elle est spectaculaire.
+
+### Ce que disent les 37 ventes
+
+    série 1      30,15 EUR      séries 22-28   3,44-5,03 EUR
+    séries 2-3   ~19 EUR        séries 29-35   4,05-6,83 EUR
+    séries 4-6   11-13 EUR
+
+Même carte, même semaine, facteur 8. Sorare libère les séries dans l.ordre et
+les premières sont poussées par l.effet de sortie — ce n.est pas un mouvement
+de marché, c.est de la rareté perçue.
+
+Ma valorisation de la veille renvoyait 10,81 EUR ; le marché réel est à 5 EUR.
+La moyenne brute des 37 ventes donne 8,36 EUR, tout aussi faux.
+
+### Le modèle corrigé
+
+`lib/valuation.ts` prend désormais la fenêtre récente la plus étroite qui
+contienne assez de ventes (2 jours ici, 20 ventes sur 37), pondère par une
+demi-vie d.un jour au lieu de cinq, écarte les valeurs au-delà de 2,5x la
+médiane — ce qui élimine le trade à 20,14 EUR, un échange et non un achat — et
+signale explicitement `launchPremium` en comparant les premières séries au
+niveau actuel.
+
+Résultat sur ces données : **5,03 EUR**, fourchette 3,44-7,21, 20 ventes,
+prime de lancement détectée. La carte achetée 4,87 EUR est à l.équilibre, pas
+en forte plus-value comme l.annonce à 14,90 EUR le laissait croire — celle-ci
+était +196 % au-dessus du marché.
+
+### Propagé
+
+Le scouting classait et affichait sur la **dernière vente**, le chiffre le plus
+bruité possible : trois ventes consécutives de Lopez ont fait 6,38, puis 20,14,
+puis 8,33 EUR. Il utilise maintenant la valorisation, affiche le nombre de
+ventes qui la soutient et marque « sortie récente » quand la prime de lancement
+est active. La fiche joueur et l.API marché suivent la même source.
+
 ## 2026-08-17 (soir) — Une annonce n'est pas une transaction
 
 Correction remontée sur le marché in-season réel de Maxime Lopez : le chiffre

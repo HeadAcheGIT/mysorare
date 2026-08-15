@@ -32,15 +32,32 @@ type ScoutPlayer = {
   floorInSeason: Money;
   floorAnySeason: Money;
   inSeasonTrend: SaleTrend | null;
+  /**
+   * What the card actually trades at, from completed sales — see
+   * lib/valuation.ts. The last sale alone is one transaction and far too
+   * noisy to price on.
+   */
+  valuation: Valuation | null;
   ownedCards: number;
   ownedInSeason: number;
   lastPlayedAt: string | null;
   clubAtLastGame: { slug: string; name: string } | null;
 };
 
+type Valuation = {
+  value: number | null;
+  low: number | null;
+  high: number | null;
+  sampleSize: number;
+  trendPct: number | null;
+  launchPremium: boolean;
+  thin: boolean;
+};
+
 /** What the per-player pass fills in, once the list is already on screen. */
 type PlayerContext = {
   trend: SaleTrend | null;
+  valuation: Valuation | null;
   lastPlayedAt: string | null;
   clubAtLastGame: { slug: string; name: string } | null;
 };
@@ -202,7 +219,7 @@ export default function Scouting({
         setPlayers((prev) =>
           prev.map((x) =>
             x.slug === p.slug
-              ? { ...x, inSeasonTrend: ctx.trend, lastPlayedAt: ctx.lastPlayedAt, clubAtLastGame: ctx.clubAtLastGame }
+              ? { ...x, inSeasonTrend: ctx.trend, valuation: ctx.valuation, lastPlayedAt: ctx.lastPlayedAt, clubAtLastGame: ctx.clubAtLastGame }
               : x
           )
         );
@@ -422,9 +439,32 @@ export default function Scouting({
                 </div>
 
                 <div className="text-right shrink-0">
-                  <p className={`font-display text-lg leading-none ${t?.lastSale ? "" : "text-muted"}`}>
-                    {money(t?.lastSale ?? null)}
+                  {/* The valuation, not the last sale: one trade can sit
+                      three times off the market (Lopez went 6,38 € → 20,14 €
+                      → 8,33 € on consecutive sales). */}
+                  <p className={`font-display text-lg leading-none ${p.valuation?.value != null ? "" : "text-muted"}`}>
+                    {p.valuation?.value != null
+                      ? money({ amount: p.valuation.value, currency: "EUR" })
+                      : money(t?.lastSale ?? null)}
                   </p>
+                  {p.valuation?.value != null && p.valuation.sampleSize > 0 && (
+                    <p
+                      className="text-[10px] font-mono text-muted/70"
+                      title={`Médiane pondérée de ${p.valuation.sampleSize} ventes conclues${
+                        p.valuation.low != null ? ` · de ${p.valuation.low} à ${p.valuation.high} €` : ""
+                      }`}
+                    >
+                      sur {p.valuation.sampleSize} ventes
+                    </p>
+                  )}
+                  {p.valuation?.launchPremium && (
+                    <p
+                      className="text-[10px] font-mono text-limited"
+                      title="Les premières séries de la saison se sont vendues bien plus cher — le prix n'a pas fini de se stabiliser."
+                    >
+                      sortie récente
+                    </p>
+                  )}
                   {t?.trendPct != null ? (
                     <p
                       className={`text-[11px] font-mono ${t.trendPct >= 0 ? "text-warn" : "text-ok"}`}

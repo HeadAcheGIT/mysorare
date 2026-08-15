@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reliableForm, valuePerEuro, isThinSample, type RankablePlayer } from "./scoutingRank";
+import { reliableForm, valuePerEuro, isThinSample, priceOf, type RankablePlayer } from "./scoutingRank";
 
 const p = (avgL5: number | null, app15: number | null, price?: number): RankablePlayer => ({
   avgL5,
@@ -71,5 +71,26 @@ describe("valuePerEuro", () => {
     // 85 points for 3.42 € looks unbeatable until you notice he never plays.
     expect(oneGame).toBeLessThan(85 / 3.42);
     expect(regular).toBeGreaterThan(0);
+  });
+});
+
+describe("priceOf", () => {
+  it("prefers the valuation over a single last sale", () => {
+    const out = priceOf({
+      avgL5: 70,
+      app15: 15,
+      valuation: { value: 5 },
+      inSeasonTrend: { lastSale: { amount: 20.14, currency: "EUR" } },
+    });
+    // 20,14 € was the outlier trade; 5 € is where the card trades.
+    expect(out).toBe(5);
+  });
+
+  it("falls back to the last sale when there is no valuation", () => {
+    expect(priceOf({ avgL5: 70, app15: 15, inSeasonTrend: { lastSale: { amount: 12, currency: "EUR" } } })).toBe(12);
+  });
+
+  it("is null with neither", () => {
+    expect(priceOf({ avgL5: 70, app15: 15 })).toBeNull();
   });
 });

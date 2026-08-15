@@ -118,22 +118,40 @@ export async function searchPlayers(query: string): Promise<PlayerSearchResult[]
 const SALES_QUERY = `
 query PlayerSales($slug: String!, $rarity: Rarity!) {
   anyPlayer(slug: $slug) {
-    tokenPrices(rarity: $rarity, seasonEligibility: IN_SEASON, first: 20) {
-      nodes { date amounts { eurCents } }
+    tokenPrices(rarity: $rarity, seasonEligibility: IN_SEASON, first: 50) {
+      nodes {
+        date
+        amounts { eurCents }
+        # The serial is what reveals a launch premium: Sorare releases serials
+        # in order, and a new season's first ones are bid up by drop hype.
+        card { serialNumber }
+      }
     }
   }
 }`;
 
 export async function getPlayerValuation(slug: string, rarity: string): Promise<Valuation> {
   const data = await publicGraphql<{
-    anyPlayer: { tokenPrices: { nodes: { date: string; amounts: { eurCents: number | null } }[] } } | null;
+    anyPlayer: {
+      tokenPrices: {
+        nodes: {
+          date: string;
+          amounts: { eurCents: number | null };
+          card: { serialNumber: number | null } | null;
+        }[];
+      };
+    } | null;
   }>(SALES_QUERY, { slug, rarity });
 
   const sales: Sale[] = (data.anyPlayer?.tokenPrices?.nodes ?? [])
     // EUR only: mixing a USD figure in would shift the median by an invented
     // exchange rate rather than by the market.
     .filter((n) => n.amounts?.eurCents != null)
-    .map((n) => ({ date: n.date, eur: (n.amounts.eurCents as number) / 100 }));
+    .map((n) => ({
+      date: n.date,
+      eur: (n.amounts.eurCents as number) / 100,
+      serial: n.card?.serialNumber ?? null,
+    }));
 
   return valueFromSales(sales);
 }

@@ -1,4 +1,5 @@
 import { prisma } from "../prisma";
+import { valueFromSales, type Sale, type Valuation } from "../valuation";
 import { publicGraphql } from "../sorare/publicClient";
 
 /**
@@ -44,6 +45,11 @@ export interface ScoutPlayer {
   /// What the in-season card has actually sold for recently. This is what
   /// answers "is the price going up or down", which a live listing can't.
   inSeasonTrend: SaleTrend | null;
+  /// What the card actually trades at, from completed sales — the figure the
+  /// ranking uses. `inSeasonTrend.lastSale` is a single transaction and far
+  /// too noisy to price on: consecutive Maxime Lopez sales ran 6,38 €, then
+  /// 20,14 €, then 8,33 €.
+  valuation: Valuation | null;
   /// Cards of this player already in your gallery, so scouting never suggests
   /// buying what you own.
   ownedCards: number;
@@ -135,8 +141,9 @@ function toMoney(card: { liveSingleSaleOffer?: { receiverSide: { amounts: Amount
 const PLAYER_SALES_QUERY = `
 query PlayerSales($slug: String!, $rarity: Rarity!) {
   anyPlayer(slug: $slug) {
-    tokenPrices(rarity: $rarity, seasonEligibility: IN_SEASON, first: 20) {
-      nodes { date amounts { eurCents usdCents referenceCurrency } }
+    tokenPrices(rarity: $rarity, seasonEligibility: IN_SEASON, first: 50) {
+      # serialNumber reveals a launch premium — see lib/valuation.ts.
+      nodes { date amounts { eurCents usdCents referenceCurrency } card { serialNumber } }
     }
     # Rides along on a request that was being made anyway, so both of these
     # cost nothing extra. They answer the two questions a form average can't:
@@ -158,6 +165,13 @@ query PlayerSales($slug: String!, $rarity: Rarity!) {
 
 export interface PlayerContext {
   trend: SaleTrend | null;
+  /**
+   * What the card actually trades at, from completed sales — see
+   * lib/valuation.ts. Distinct from `trend.lastSale`, which is a single
+   * transaction and therefore the noisiest number on the screen: on Maxime
+   * Lopez consecutive sales ran 6,38 € then 20,14 € then 8,33 €.
+   */
+  valuation: Valuation | null;
   /** ISO date of the player's most recent game, whatever club it was for. */
   lastPlayedAt: string | null;
   /** The club he actually played that game for — not necessarily his current one. */
@@ -167,7 +181,9 @@ export interface PlayerContext {
 async function getPlayerContext(slug: string, rarity: string): Promise<PlayerContext> {
   const data = await publicGraphql<{
     anyPlayer: {
-      tokenPrices: { nodes: { date: string; amounts: Amounts }[] };
+      tokenPrices: {
+        nodes: { date: string; amounts: Amounts; card: { serialNumber: number | null } | null }[];
+      };
       anyPastGames: {
         nodes: {
           date: string;
@@ -180,8 +196,18 @@ async function getPlayerContext(slug: string, rarity: string): Promise<PlayerCon
   const lastGame = data.anyPlayer?.anyPastGames?.nodes?.[0] ?? null;
   const team = lastGame?.playerGameScore?.anyPlayerGameStats?.anyTeam ?? null;
 
+  const sales: Sale[] = (data.anyPlayer?.tokenPrices?.nodes ?? [])
+    // EUR only — a USD figure would need an invented rate to compare.
+    .filter((n) => n.amounts?.eurCents != null)
+    .map((n) => ({
+      date: n.date,
+      eur: (n.amounts.eurCents as number) / 100,
+      serial: n.card?.serialNumber ?? null,
+    }));
+
   return {
     trend: buildTrend(data),
+    valuation: sales.length ? valueFromSales(sales) : null,
     lastPlayedAt: lastGame?.date ?? null,
     clubAtLastGame: team ? { slug: team.slug, name: team.name } : null,
   };
@@ -272,6 +298,7 @@ export async function scoutLeague(
       floorInSeason: toMoney(p.floorInSeason),
       floorAnySeason: toMoney(p.floorAnySeason),
       inSeasonTrend: null,
+      valuation: null,
       ownedCards: o?.total ?? 0,
       ownedInSeason: o?.inSeason ?? 0,
       lastPlayedAt: null,
@@ -298,6 +325,7 @@ export async function scoutLeague(
       const ctx = await getPlayerContext(p.slug, rarity).catch(() => null);
       if (!ctx) continue;
       p.inSeasonTrend = ctx.trend;
+      p.valuation = ctx.valuation;
       p.lastPlayedAt = ctx.lastPlayedAt;
       p.clubAtLastGame = ctx.clubAtLastGame;
     }
