@@ -7,6 +7,7 @@
  * which most sessions don't have.
  */
 import { publicGraphql } from "../sorare/publicClient";
+import { valueFromSales, type Sale, type Valuation } from "../valuation";
 
 export interface PlayerSearchResult {
   slug: string;
@@ -105,6 +106,36 @@ export async function searchPlayers(query: string): Promise<PlayerSearchResult[]
       birthDate: p.birthDate ?? null,
       competitionName: p.activeClub?.domesticLeague?.displayName ?? null,
     }));
+}
+
+/**
+ * Completed in-season sales for one player and rarity, valued.
+ *
+ * Separate from the floor on purpose: the floor is what someone is *asking*,
+ * this is what cards have actually *fetched*. On Maxime Lopez the two differed
+ * by 38%, with the listing the higher of the pair — see lib/valuation.ts.
+ */
+const SALES_QUERY = `
+query PlayerSales($slug: String!, $rarity: Rarity!) {
+  anyPlayer(slug: $slug) {
+    tokenPrices(rarity: $rarity, seasonEligibility: IN_SEASON, first: 20) {
+      nodes { date amounts { eurCents } }
+    }
+  }
+}`;
+
+export async function getPlayerValuation(slug: string, rarity: string): Promise<Valuation> {
+  const data = await publicGraphql<{
+    anyPlayer: { tokenPrices: { nodes: { date: string; amounts: { eurCents: number | null } }[] } } | null;
+  }>(SALES_QUERY, { slug, rarity });
+
+  const sales: Sale[] = (data.anyPlayer?.tokenPrices?.nodes ?? [])
+    // EUR only: mixing a USD figure in would shift the median by an invented
+    // exchange rate rather than by the market.
+    .filter((n) => n.amounts?.eurCents != null)
+    .map((n) => ({ date: n.date, eur: (n.amounts.eurCents as number) / 100 }));
+
+  return valueFromSales(sales);
 }
 
 export async function getPlayerMarket(slug: string): Promise<MarketFloor> {

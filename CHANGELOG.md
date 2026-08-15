@@ -3,6 +3,46 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-17 (soir) — Une annonce n'est pas une transaction
+
+Correction remontée sur le marché in-season réel de Maxime Lopez : le chiffre
+publié hier (14,90 €) était lui-même issu d'une mauvaise méthode.
+
+### Ce qui n'allait pas
+
+La valeur venait de `lowestPriceAnyCard(...).liveSingleSaleOffer` — le **prix
+demandé** le plus bas. C'est l'espoir d'un vendeur, pas une preuve de valeur.
+
+Confronté aux ventes réellement conclues (API Sorare, 15 dernières in-season
+limited) :
+
+| Source | Valeur |
+|---|---|
+| Annonce la moins chère | 14,90 € |
+| Ventes conclues | médiane **10,81 €**, de 6,38 € à 30,15 € |
+
+L'annonce était **38 % au-dessus** du marché. Et surtout la tendance était
+invisible : 30,15 € le 10 août, 11–19 € le 11, 6,38–10,81 € le 12. Un marché
+en chute de 35 % que l'app présentait comme un prix stable.
+
+### La nouvelle méthode
+
+`lib/valuation.ts` valorise à partir des **transactions**, pas des annonces :
+
+- **médiane pondérée par la récence** (demi-vie 5 jours) — une vente d'il y a
+  une semaine pèse moitié moins qu'une d'aujourd'hui ;
+- **médiane et non moyenne** — la vente isolée à 30,15 € ne tire plus le
+  résultat vers le haut ;
+- **fourchette, taille d'échantillon et ancienneté publiées** — un chiffre
+  bâti sur deux ventes doit se voir comme tel ;
+- **`thin`** quand l'échantillon est trop maigre ou le marché trop ancien ;
+- **`listingPremiumPct`** mesure l'écart entre le prix demandé et le marché —
+  c'est exactement le garde-fou qui aurait attrapé l'erreur d'origine.
+
+Les tests sont écrits sur les vraies données Lopez, pas sur des valeurs
+inventées, et vérifient notamment que la valorisation reste sous les 14,90 €
+de l'annonce.
+
 ## 2026-08-17 — Le floor affiché n'était pas celui de la carte
 
 Remonté depuis la prod sur Maxime Lopez. Deux problèmes distincts, les deux
