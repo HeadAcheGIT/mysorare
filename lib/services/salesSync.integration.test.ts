@@ -50,7 +50,7 @@ describe("syncSoldOffersFromSorare", () => {
     vi.mocked(getPlayerMarket).mockReset().mockResolvedValue({
       slug: "x",
       name: "x",
-      floorByRarity: {},
+      floorByRarity: {}, floorInSeasonByRarity: {},
       listedCount: 0,
     });
   });
@@ -255,7 +255,7 @@ describe("syncSoldOffersFromSorare", () => {
     vi.mocked(getPlayerMarket).mockResolvedValue({
       slug: "ref-player",
       name: "Ref Player",
-      floorByRarity: { limited: 100 },
+      floorByRarity: { limited: 100 }, floorInSeasonByRarity: { limited: 100 },
       listedCount: 1,
     });
 

@@ -22,7 +22,15 @@ export interface PlayerSearchResult {
 export interface MarketFloor {
   slug: string;
   name: string;
+  /** Cheapest card of that rarity, any season — usually an old, cheap season. */
   floorByRarity: Record<string, number | null>; // eur, null = nothing currently listed
+  /**
+   * Cheapest *in-season* card of that rarity. This is the one that matters for
+   * a card you actually field: measured on Maxime Lopez, the any-season floor
+   * was 0,33 € (a 2023 card) against 14,90 € in-season — a factor of 45. Showing
+   * only the former made an in-season card look worthless.
+   */
+  floorInSeasonByRarity: Record<string, number | null>;
   listedCount: number;
 }
 
@@ -58,10 +66,15 @@ query PlayerFloor($slug: String!) {
     slug
     displayName
     common: lowestPriceAnyCard(rarity: common) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
+    commonIS: lowestPriceAnyCard(rarity: common, inSeason: true) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
     limited: lowestPriceAnyCard(rarity: limited) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
+    limitedIS: lowestPriceAnyCard(rarity: limited, inSeason: true) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
     rare: lowestPriceAnyCard(rarity: rare) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
+    rareIS: lowestPriceAnyCard(rarity: rare, inSeason: true) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
     super_rare: lowestPriceAnyCard(rarity: super_rare) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
+    super_rareIS: lowestPriceAnyCard(rarity: super_rare, inSeason: true) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
     unique: lowestPriceAnyCard(rarity: unique) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
+    uniqueIS: lowestPriceAnyCard(rarity: unique, inSeason: true) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
   }
 }`;
 
@@ -105,7 +118,17 @@ export async function getPlayerMarket(slug: string): Promise<MarketFloor> {
     super_rare: eur(p?.super_rare),
     unique: eur(p?.unique),
   };
-  const listedCount = Object.values(floorByRarity).filter((v) => v != null).length;
+  const floorInSeasonByRarity: Record<string, number | null> = {
+    common: eur(p?.commonIS),
+    limited: eur(p?.limitedIS),
+    rare: eur(p?.rareIS),
+    super_rare: eur(p?.super_rareIS),
+    unique: eur(p?.uniqueIS),
+  };
+  // Counted across both so a player listed only in-season still reads as listed.
+  const listedCount = Object.keys(floorByRarity).filter(
+    (r) => floorByRarity[r] != null || floorInSeasonByRarity[r] != null
+  ).length;
 
-  return { slug, name: p?.displayName ?? slug, floorByRarity, listedCount };
+  return { slug, name: p?.displayName ?? slug, floorByRarity, floorInSeasonByRarity, listedCount };
 }

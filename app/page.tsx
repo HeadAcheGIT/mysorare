@@ -199,6 +199,7 @@ export default function Page() {
   const [checkingLineups, setCheckingLineups] = useState(false);
   const [syncingFriendlies, setSyncingFriendlies] = useState(false);
   const [syncingForm, setSyncingForm] = useState(false);
+  const [syncingAcquisitions, setSyncingAcquisitions] = useState(false);
   const [notice, setNotice] = useState("");
 
   // Market
@@ -564,6 +565,50 @@ export default function Page() {
       setError(msg(err));
     } finally {
       setSyncingForm(false);
+    }
+  }
+
+  /**
+   * Reads what each card actually cost from the public ownership record —
+   * auctions, instant buys, offers, rewards and packs alike, which the
+   * offer-based sync never covered. No Sorare login needed.
+   */
+  async function syncAcquisitions() {
+    setSyncingAcquisitions(true);
+    setNotice("");
+    try {
+      let cursor = 0;
+      let priced = 0;
+      let credits = 0;
+      let guard = 0;
+      for (;;) {
+        const batch = await apiFetch<{
+          processed: number;
+          priced: number;
+          withCredits: number;
+          nextCursor: number | null;
+          total: number;
+        }>("/api/acquisitions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ cursor }),
+        });
+        priced += batch.priced;
+        credits += batch.withCredits;
+        setNotice(`Prix d'achat : ${Math.min(cursor + batch.processed, batch.total)}/${batch.total} cartes`);
+        if (batch.nextCursor == null) break;
+        cursor = batch.nextCursor;
+        if (++guard > 200) break;
+      }
+      await refreshAll();
+      await loadLogs();
+      setNotice(
+        `${priced} prix d'achat récupérés${credits > 0 ? `, dont ${credits} réglé(s) en crédits` : ""}.`
+      );
+    } catch (err) {
+      setError(msg(err));
+    } finally {
+      setSyncingAcquisitions(false);
     }
   }
 
@@ -1251,6 +1296,19 @@ export default function Page() {
             <p className="font-mono text-xs text-muted">
               Récupère photos, clubs, blessures et scores récents depuis l&apos;API publique Sorare. Aucune
               connexion requise.
+            </p>
+
+            <button
+              onClick={syncAcquisitions}
+              disabled={syncingAcquisitions}
+              className="w-full border border-line font-bold py-3 rounded-md text-sm disabled:opacity-50"
+            >
+              {syncingAcquisitions ? "Analyse…" : "Récupérer mes prix d'achat réels"}
+            </button>
+            <p className="font-mono text-xs text-muted">
+              Lit le registre de propriété public de chaque carte : enchères, achats directs, offres,
+              récompenses et packs — là où la synchro des ventes ne voyait que les ventes directes. Repère
+              aussi les achats réglés en crédits. Aucune connexion requise.
             </p>
 
             <button

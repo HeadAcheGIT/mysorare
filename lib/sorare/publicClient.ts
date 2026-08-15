@@ -146,6 +146,28 @@ query FixtureGames($slug: String!) {
   }
 }`;
 
+/**
+ * How each card was acquired and for how much, from the blockchain ownership
+ * record. Public and batchable, unlike the authenticated offer connections.
+ *
+ * This is the honest answer to "what did I pay": it covers auctions, instant
+ * buys, offers, rewards and packs alike, where reading completed single-sale
+ * offers only ever caught one of those. `settlementDelayReason` additionally
+ * says when conversion credits settled the purchase.
+ */
+export const CARD_OWNERSHIP_PUBLIC = `
+query CardOwnership($slugs: [String!]!) {
+  anyCards(slugs: $slugs) {
+    slug
+    ownershipHistory {
+      from
+      transferType
+      settlementDelayReason
+      amounts { eurCents usdCents wei }
+    }
+  }
+}`;
+
 export const OPEN_FIXTURES_PUBLIC = `
 query OpenFixtures {
   so5 {

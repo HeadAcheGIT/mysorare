@@ -110,6 +110,23 @@ model Card {
   /// SorareScore's 10-game average for this card's player at export time.
   l10            Float?
 
+  /// How the card was actually acquired, from the blockchain ownership record
+  /// (`AnyCardInterface.ownershipHistory`): ENGLISH_AUCTION, INSTANT_BUY,
+  /// SINGLE_SALE_OFFER, REWARD, PACK, MINT… This covers every route into the
+  /// gallery, where the old sync only read completed single-sale offers and so
+  /// left auctions and rewards with no price at all.
+  acquiredVia     String?
+  acquiredAt      DateTime?
+  /// True when boughtPrice had to be converted from a wei amount at the rate
+  /// of the settlement day, rather than read as a direct EUR figure — the UI
+  /// marks it as an approximation, same rule as Sale.boughtPriceApprox.
+  boughtPriceApprox Boolean @default(false)
+  /// True when Sorare flagged the purchase as settled with conversion credits
+  /// (`settlementDelayReason = CONVERSION_CREDIT_USED`). The amount is still
+  /// the real price paid — this only says how it was settled, which is worth
+  /// showing rather than hiding.
+  paidWithCredits Boolean   @default(false)
+
   @@index([playerSlug])
 }
 

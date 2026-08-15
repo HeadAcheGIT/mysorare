@@ -32,7 +32,7 @@ describe("listSales", () => {
     vi.mocked(getPlayerMarket).mockResolvedValue({
       slug: "kylian-mbappe",
       name: "Kylian Mbappé",
-      floorByRarity: { limited: 150 },
+      floorByRarity: { limited: 150 }, floorInSeasonByRarity: { limited: 150 },
       listedCount: 1,
     });
 
@@ -55,7 +55,7 @@ describe("listSales", () => {
     vi.mocked(getPlayerMarket).mockResolvedValue({
       slug: "no-price-player",
       name: "No Price Player",
-      floorByRarity: { common: 40 },
+      floorByRarity: { common: 40 }, floorInSeasonByRarity: { common: 40 },
       listedCount: 1,
     });
 
@@ -102,7 +102,7 @@ describe("listSales", () => {
     vi.mocked(getPlayerMarket).mockResolvedValue({
       slug: "same-player",
       name: "Same Player",
-      floorByRarity: { limited: 15 },
+      floorByRarity: { limited: 15 }, floorInSeasonByRarity: { limited: 15 },
       listedCount: 1,
     });
 
@@ -118,7 +118,7 @@ describe("listSales", () => {
     await prisma.sale.create({
       data: { cardSlug: "newer-2024-common-1", playerSlug: "newer", playerName: "Newer", rarity: "common", detectedAt: new Date("2026-06-01") },
     });
-    vi.mocked(getPlayerMarket).mockResolvedValue({ slug: "x", name: "x", floorByRarity: {}, listedCount: 0 });
+    vi.mocked(getPlayerMarket).mockResolvedValue({ slug: "x", name: "x", floorByRarity: {}, floorInSeasonByRarity: {}, listedCount: 0 });
 
     const rows = await listSales();
     expect(rows.map((r) => r.playerSlug)).toEqual(["newer", "older"]);

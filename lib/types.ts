@@ -63,6 +63,18 @@ export interface SquadCard {
   floorPrice: number | null;
   estimatedPrice: number | null;
   boughtPrice: number | null;
+  /** True when boughtPrice came from converting a wei amount — shown as an approximation. */
+  boughtPriceApprox?: boolean;
+  /** How the card entered the gallery: ENGLISH_AUCTION, INSTANT_BUY, REWARD, PACK… */
+  acquiredVia?: string | null;
+  /** Sorare settled this purchase with conversion credits. */
+  paidWithCredits?: boolean;
+  /**
+   * Cheapest *in-season* card of this player and rarity. For an in-season card
+   * this is the meaningful floor — the any-season one is usually an old season
+   * trading for cents and makes the card look worthless.
+   */
+  floorInSeason?: number | null;
 }
 
 export type SquadResponse = { fixture: string | null; cards: SquadCard[] };

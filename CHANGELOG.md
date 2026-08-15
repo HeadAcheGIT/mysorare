@@ -3,6 +3,47 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-17 — Le floor affiché n'était pas celui de la carte
+
+Remonté depuis la prod sur Maxime Lopez. Deux problèmes distincts, les deux
+confirmés sur données réelles.
+
+### Un facteur 45 sur la valeur d'une carte
+
+`getPlayerMarket` interrogeait `lowestPriceAnyCard(rarity:)` **sans**
+`inSeason: true` : il renvoyait donc la carte la moins chère toutes saisons
+confondues. Mesuré sur Maxime Lopez limited :
+
+| Floor | Carte | Prix |
+|---|---|---|
+| In-season (2026) | `maxime-lopez-2026-limited-10` | **14,90 €** |
+| Toutes saisons | `maxime-lopez-2023-limited-388` | **0,33 €** |
+
+Une carte in-season achetée 4,87 € s'affichait donc face à un floor de 0,33 €
+— une perte apparente de 93 %, alors qu'elle est en plus-value. De quoi vendre
+exactement au mauvais moment.
+
+Le service renvoie désormais les deux floors. La fiche montre celui qui
+s'applique à la carte, mentionne l'autre comme non comparable, et calcule la
+plus-value sur la bonne référence.
+
+### Les prix d'achat manquants, et les crédits
+
+La synchro ne lisait que les *ventes directes conclues*. Une carte gagnée aux
+enchères, achetée en achat immédiat, reçue en récompense ou issue d'un pack
+n'avait donc aucun prix — et le bilan de saison refusait de calculer un net
+faute de dépense connue.
+
+`AnyCardInterface.ownershipHistory` couvre toutes ces voies, est **public** et
+**batchable**. Il donne le montant réel, le mode d'acquisition
+(`ENGLISH_AUCTION`, `INSTANT_BUY`, `REWARD`, `PACK`…) et, via
+`settlementDelayReason = CONVERSION_CREDIT_USED`, **les achats réglés en
+crédits** — la demande initiale.
+
+Un transfert gratuit (récompense, pack, mint) est enregistré à 0 € plutôt que
+laissé vide : c'est un fait, pas une donnée manquante. Le prix ne comble qu'un
+trou et n'écrase jamais celui d'un CSV, qui vient de tes propres relevés.
+
 ## 2026-08-16 (soir) — Sorare Connect + l'adversaire enfin pris en compte
 
 ### Sorare Connect, avec sa limite dite d'emblée

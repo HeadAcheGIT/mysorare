@@ -39,6 +39,7 @@ describe("runAlerts", () => {
       slug: "player-a",
       name: "Player A",
       floorByRarity: { limited: 100 },
+    floorInSeasonByRarity: { limited: 100 },
       listedCount: 1,
     });
 
@@ -53,8 +54,8 @@ describe("runAlerts", () => {
   it("flags price_down after a >=10% drop between two runs", async () => {
     await trackViaCard("player-b", "Player B");
     vi.mocked(getPlayerMarket)
-      .mockResolvedValueOnce({ slug: "player-b", name: "Player B", floorByRarity: { limited: 100 }, listedCount: 1 })
-      .mockResolvedValueOnce({ slug: "player-b", name: "Player B", floorByRarity: { limited: 80 }, listedCount: 1 });
+      .mockResolvedValueOnce({ slug: "player-b", name: "Player B", floorByRarity: { limited: 100 }, floorInSeasonByRarity: { limited: 100 }, listedCount: 1 })
+      .mockResolvedValueOnce({ slug: "player-b", name: "Player B", floorByRarity: { limited: 80 }, floorInSeasonByRarity: { limited: 80 }, listedCount: 1 });
 
     await runAlerts(10_000);
     await runAlerts(10_000);
@@ -68,9 +69,9 @@ describe("runAlerts", () => {
   it("clears a stale alert once the price recovers", async () => {
     await trackViaCard("player-c", "Player C");
     vi.mocked(getPlayerMarket)
-      .mockResolvedValueOnce({ slug: "player-c", name: "Player C", floorByRarity: { limited: 100 }, listedCount: 1 })
-      .mockResolvedValueOnce({ slug: "player-c", name: "Player C", floorByRarity: { limited: 80 }, listedCount: 1 })
-      .mockResolvedValueOnce({ slug: "player-c", name: "Player C", floorByRarity: { limited: 82 }, listedCount: 1 });
+      .mockResolvedValueOnce({ slug: "player-c", name: "Player C", floorByRarity: { limited: 100 }, floorInSeasonByRarity: { limited: 100 }, listedCount: 1 })
+      .mockResolvedValueOnce({ slug: "player-c", name: "Player C", floorByRarity: { limited: 80 }, floorInSeasonByRarity: { limited: 80 }, listedCount: 1 })
+      .mockResolvedValueOnce({ slug: "player-c", name: "Player C", floorByRarity: { limited: 82 }, floorInSeasonByRarity: { limited: 82 }, listedCount: 1 });
 
     await runAlerts(10_000); // baseline
     await runAlerts(10_000); // drop -> price_down
@@ -89,7 +90,7 @@ describe("runAlerts", () => {
     vi.mocked(getPlayerMarket).mockResolvedValue({
       slug: "player-d",
       name: "Player D",
-      floorByRarity: {},
+      floorByRarity: {}, floorInSeasonByRarity: {},
       listedCount: 0,
     });
     vi.mocked(searchPlayerNews).mockResolvedValue([
@@ -112,6 +113,7 @@ describe("runAlerts", () => {
       slug: "watched-only",
       name: "Watched Only",
       floorByRarity: { limited: 50 },
+    floorInSeasonByRarity: { limited: 50 },
       listedCount: 1,
     });
 

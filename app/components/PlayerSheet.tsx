@@ -9,7 +9,25 @@ import StartProbability from "./StartProbability";
 import { POSITION_LABEL, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
 
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
-const eur = (v: number | null) => (v == null ? "—" : `${v.toFixed(2)} €`);
+const eur = (v: number | null | undefined) => (v == null ? "—" : `${v.toFixed(2)} €`);
+
+/** Sorare's transfer types, in the manager's language. */
+const ACQUISITION_LABEL: Record<string, string> = {
+  ENGLISH_AUCTION: "Gagnée aux enchères",
+  BUNDLED_ENGLISH_AUCTION: "Gagnée aux enchères (lot)",
+  INSTANT_BUY: "Achat immédiat",
+  SINGLE_SALE_OFFER: "Achetée en vente directe",
+  SINGLE_BUY_OFFER: "Achetée sur offre",
+  DIRECT_OFFER: "Reçue en échange",
+  REWARD: "Gagnée en récompense",
+  PACK: "Issue d'un pack",
+  MINT: "Carte d'origine",
+  REFERRAL: "Parrainage",
+  SHARDS: "Échangée contre des shards",
+  TRANSFER: "Transférée",
+  DEPOSIT: "Déposée",
+  LOAN: "Prêtée",
+};
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" | "neutral" }) {
   return (
@@ -38,7 +56,12 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
 
   const rarity = rarityOf(card.rarity);
   const isUnique = card.rarity === "unique";
-  const profit = card.price != null && card.boughtPrice != null ? card.price - card.boughtPrice : null;
+  // An in-season card is only comparable to other in-season cards.
+  const floor = (card.inSeason ? card.floorInSeason : null) ?? card.floorPrice;
+  // Profit measured against the floor that actually applies to this card,
+  // rather than against a different season's price.
+  const reference = card.price ?? floor;
+  const profit = reference != null && card.boughtPrice != null ? reference - card.boughtPrice : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center">
@@ -141,10 +164,29 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
             <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">Marché</p>
             <div className="grid grid-cols-2 gap-2">
               <Stat label="Prix" value={eur(card.price)} />
-              <Stat label="Floor" value={eur(card.floorPrice)} />
+              <Stat label={card.inSeason ? "Floor in-season" : "Floor"} value={eur(floor)} />
               <Stat label="Estimé" value={eur(card.estimatedPrice)} />
               <Stat label="Acheté" value={eur(card.boughtPrice)} />
             </div>
+
+            {/* For an in-season card the any-season floor is usually an old
+                season trading for cents — showing it alone made a card worth
+                €15 look worth €0.33. */}
+            {card.inSeason && card.floorInSeason != null && card.floorPrice != null && (
+              <p className="mt-1 font-mono text-[11px] text-muted">
+                Floor toutes saisons {eur(card.floorPrice)} — non comparable, c&apos;est une carte d&apos;une
+                saison antérieure.
+              </p>
+            )}
+
+            {(card.acquiredVia || card.paidWithCredits || card.boughtPriceApprox) && (
+              <p className="mt-1 font-mono text-[11px] text-muted">
+                {card.acquiredVia && ACQUISITION_LABEL[card.acquiredVia]}
+                {card.paidWithCredits && " · réglé en crédits"}
+                {card.boughtPriceApprox && " · prix converti depuis l'ETH (≈)"}
+              </p>
+            )}
+
             {profit != null && (
               <p className={`mt-2 font-mono text-sm ${profit >= 0 ? "text-ok" : "text-warn"}`}>
                 {profit >= 0 ? "+" : ""}

@@ -68,7 +68,9 @@ export async function getSquadView(
   const lastPlayedMap = new Map(lastAppearances.map((a) => [a.playerSlug, a._max.gameDate ?? null]));
 
   const out: SquadCard[] = cards
-    .map((c) => {
+    // Annotated so the shape is checked against SquadCard here rather than
+    // inferred and only failing at the filter below.
+    .map((c): SquadCard | null => {
       const p = playerMap.get(c.playerSlug);
       if (!p) return null;
       const proj = projMap.get(p.slug);
@@ -120,6 +122,9 @@ export async function getSquadView(
         floorPrice: c.floorPrice,
         estimatedPrice: c.estimatedPrice,
         boughtPrice: c.boughtPrice,
+        boughtPriceApprox: c.boughtPriceApprox,
+        acquiredVia: c.acquiredVia,
+        paidWithCredits: c.paidWithCredits,
       };
     })
     .filter((x): x is SquadCard => x != null)
