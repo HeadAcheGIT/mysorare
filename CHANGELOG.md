@@ -3,6 +3,39 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-19 (nuit) — Limited uniquement côté marché
+
+Précision du manager : il ne joue qu'en limited, donc rare, super rare et
+unique n'ont pas à être interrogés.
+
+### Filtre d'achat, pas filtre d'affichage
+
+`TRACKED_RARITIES` liste ce qu'on **achète** (common + limited) et pilote le
+floor par défaut, le scouting et la recherche marché. Ce qui est **déjà
+possédé** reste affiché et valorisé quelle que soit sa rareté : la galerie est
+pilotée par les cartes qu'elle contient, pas par cette liste, donc une carte
+rare reçue en récompense ne peut pas disparaître silencieusement du total du
+portefeuille.
+
+### La requête de floor se construit maintenant
+
+Chaque rareté coûte deux sous-requêtes (toutes saisons + in-season), et
+`FLOOR_QUERY` en demandait cinq en dur, soit dix, à chaque vérification de
+prix. Elle est désormais générée à partir des raretés demandées.
+
+Effet de bord plus intéressant que l'économie elle-même : `alerts.ts` et
+`sales.ts` connaissaient déjà la rareté de la carte et jetaient donc quatre
+cinquièmes de la réponse. Ils passent leur rareté — **deux sous-requêtes au
+lieu de dix**, et le résultat reste juste pour une rareté hors liste.
+
+La rareté entre dans le document comme littéral d'énumération (elle ne peut pas
+être une variable GraphQL), donc elle est filtrée contre `ALL_RARITIES` : ces
+valeurs viennent de query strings et de lignes en base.
+
+Vérifié en direct sur Maxime Lopez : défaut → `{common, limited}` ; une seule
+rareté → `{limited}` ; `rare` hors liste → répond quand même ; chaîne bidon →
+aucune requête émise.
+
 ## 2026-08-19 (soir) — Tes watchlists Sorare deviennent celles de l'app
 
 La watchlist de l'app était une seconde liste, tenue en parallèle de celle de

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/apiFetch";
-import { POSITION_SHORT, compareNullable, u23SortValue } from "@/lib/types";
+import { POSITION_SHORT, RARITY_CLASS, TRACKED_RARITIES, compareNullable, u23SortValue } from "@/lib/types";
 import { formatMoney as money, relativeDate as daysAgo } from "@/lib/format";
 import { scoreColor, SCORE_COLOR_CLASS } from "@/lib/types";
 import SortControl, { type SortDirection } from "./SortControl";
@@ -300,10 +300,13 @@ export default function Scouting({
           aria-label="Rareté"
           className="bg-ink border border-line rounded-md px-2 py-2 text-sm"
         >
-          <option value="limited">Limited</option>
-          <option value="rare">Rare</option>
-          <option value="common">Common</option>
-          <option value="super_rare">Super Rare</option>
+          {/* Driven by the same list the API validates against, so the picker
+              can't offer a rarity the route rejects. */}
+          {TRACKED_RARITIES.map((r) => (
+            <option key={r} value={r}>
+              {RARITY_CLASS[r].label}
+            </option>
+          ))}
         </select>
         <button
           onClick={run}

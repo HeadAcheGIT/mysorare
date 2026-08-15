@@ -92,7 +92,9 @@ export function classifyPriceChange(
 }
 
 async function checkPriceAlert(p: TrackedPlayer): Promise<void> {
-  const market = await getPlayerMarket(p.slug);
+  // Only the rarity actually tracked: this used to fetch all five and discard
+  // four, and it stays correct for a rarity outside the default shopping list.
+  const market = await getPlayerMarket(p.slug, [p.rarity]);
   const floor = market.floorByRarity[p.rarity];
   if (floor == null) return;
 

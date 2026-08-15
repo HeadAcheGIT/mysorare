@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listLeagues, scoutLeague, scoutPlayerContext } from "@/lib/services/scouting";
+import { TRACKED_RARITIES } from "@/lib/types";
 import { ApiError, withErrorHandling } from "@/lib/apiHandler";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const RARITIES = ["common", "limited", "rare", "super_rare", "unique"];
+/**
+ * Scouting is a *buying* tool, so it only offers the rarities actually played
+ * — unlike the gallery, which must keep showing whatever is already owned.
+ */
+const RARITIES: readonly string[] = TRACKED_RARITIES;
 
 export const GET = withErrorHandling(async (req: NextRequest) => {
   const { searchParams } = new URL(req.url);

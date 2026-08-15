@@ -7,6 +7,7 @@
  * which most sessions don't have.
  */
 import { publicGraphql } from "../sorare/publicClient";
+import { ALL_RARITIES, TRACKED_RARITIES } from "../types";
 import { valueFromSales, type Sale, type Valuation } from "../valuation";
 
 export interface PlayerSearchResult {
@@ -58,26 +59,38 @@ query SearchPlayers($query: String!, $pageSize: Int!) {
 
 /**
  * One field per rarity rather than a loop, since `lowestPriceAnyCard` can't
- * take a list — this is the shape Sorare's schema requires for "the floor
- * across every rarity" in a single request.
+ * take a list — this is the shape Sorare's schema requires for several floors
+ * in a single request.
+ *
+ * Built from the rarities asked for rather than fixed at all five: each one
+ * costs a pair of sub-queries (any-season and in-season), so a caller that
+ * needs a single rarity — which is every caller that already knows the card
+ * it's pricing — spends four sub-queries where it used to spend ten.
+ *
+ * The rarity goes in as a GraphQL enum literal and so can't be a variable;
+ * it's whitelisted against `ALL_RARITIES` instead, because these values reach
+ * here from query strings and database rows.
  */
-const FLOOR_QUERY = `
+const OFFER = `{ liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }`;
+
+function floorQuery(rarities: readonly string[]): string {
+  const fields = rarities
+    .map(
+      (r) =>
+        `    ${r}: lowestPriceAnyCard(rarity: ${r}) ${OFFER}\n` +
+        `    ${r}IS: lowestPriceAnyCard(rarity: ${r}, inSeason: true) ${OFFER}`
+    )
+    .join("\n");
+
+  return `
 query PlayerFloor($slug: String!) {
   anyPlayer(slug: $slug) {
     slug
     displayName
-    common: lowestPriceAnyCard(rarity: common) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
-    commonIS: lowestPriceAnyCard(rarity: common, inSeason: true) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
-    limited: lowestPriceAnyCard(rarity: limited) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
-    limitedIS: lowestPriceAnyCard(rarity: limited, inSeason: true) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
-    rare: lowestPriceAnyCard(rarity: rare) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
-    rareIS: lowestPriceAnyCard(rarity: rare, inSeason: true) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
-    super_rare: lowestPriceAnyCard(rarity: super_rare) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
-    super_rareIS: lowestPriceAnyCard(rarity: super_rare, inSeason: true) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
-    unique: lowestPriceAnyCard(rarity: unique) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
-    uniqueIS: lowestPriceAnyCard(rarity: unique, inSeason: true) { liveSingleSaleOffer { receiverSide { amounts { eurCents usdCents } } } }
+${fields}
   }
 }`;
+}
 
 type RarityCard = { liveSingleSaleOffer: { receiverSide: { amounts: { eurCents: number | null; usdCents: number | null } } } | null } | null;
 
@@ -173,24 +186,36 @@ export async function getPlayerValuation(
   return valueFromSales(sales);
 }
 
-export async function getPlayerMarket(slug: string): Promise<MarketFloor> {
-  const data = await publicGraphql<{ anyPlayer: any }>(FLOOR_QUERY, { slug });
+/**
+ * Floors for one player.
+ *
+ * `rarities` defaults to the ones actually played (`TRACKED_RARITIES`). A
+ * caller holding a specific card should pass just that card's rarity: it keeps
+ * the answer correct for a rarity outside the default while costing the least
+ * possible.
+ */
+export async function getPlayerMarket(
+  slug: string,
+  rarities: readonly string[] = TRACKED_RARITIES
+): Promise<MarketFloor> {
+  // Whitelisted because these values arrive from query strings and DB rows,
+  // and they are interpolated into the document as enum literals.
+  const wanted = rarities.filter((r): r is (typeof ALL_RARITIES)[number] =>
+    (ALL_RARITIES as readonly string[]).includes(r)
+  );
+  if (!wanted.length) {
+    return { slug, name: slug, floorByRarity: {}, floorInSeasonByRarity: {}, listedCount: 0 };
+  }
+
+  const data = await publicGraphql<{ anyPlayer: any }>(floorQuery(wanted), { slug });
   const p = data.anyPlayer;
 
-  const floorByRarity: Record<string, number | null> = {
-    common: eur(p?.common),
-    limited: eur(p?.limited),
-    rare: eur(p?.rare),
-    super_rare: eur(p?.super_rare),
-    unique: eur(p?.unique),
-  };
-  const floorInSeasonByRarity: Record<string, number | null> = {
-    common: eur(p?.commonIS),
-    limited: eur(p?.limitedIS),
-    rare: eur(p?.rareIS),
-    super_rare: eur(p?.super_rareIS),
-    unique: eur(p?.uniqueIS),
-  };
+  const floorByRarity: Record<string, number | null> = {};
+  const floorInSeasonByRarity: Record<string, number | null> = {};
+  for (const r of wanted) {
+    floorByRarity[r] = eur(p?.[r]);
+    floorInSeasonByRarity[r] = eur(p?.[`${r}IS`]);
+  }
   // Counted across both so a player listed only in-season still reads as listed.
   const listedCount = Object.keys(floorByRarity).filter(
     (r) => floorByRarity[r] != null || floorInSeasonByRarity[r] != null

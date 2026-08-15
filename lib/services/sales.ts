@@ -77,7 +77,9 @@ export async function listSales(limit = 100, budgetMs = 40_000): Promise<SaleRow
     if (Date.now() - started > budgetMs) return null; // out of time — leave unverified rather than block the response
     let floor: number | null = null;
     try {
-      const market = await getPlayerMarket(playerSlug);
+      // The sale's own rarity, not the whole set — a past sale of a rare card
+      // still gets a floor even though rare isn't shopped for.
+      const market = await getPlayerMarket(playerSlug, [rarity]);
       floor = market.floorByRarity[rarity] ?? null;
     } catch {
       // Live lookup is a nice-to-have here; the historical record still matters without it.

@@ -148,6 +148,25 @@ export const RARITY_CLASS: Record<string, { text: string; border: string; bg: st
 
 export const rarityOf = (r: string) => RARITY_CLASS[r] ?? RARITY_CLASS.common;
 
+/** Every rarity Sorare issues — the guard for anything interpolated into a query. */
+export const ALL_RARITIES = ["common", "limited", "rare", "super_rare", "unique"] as const;
+
+/**
+ * The rarities this manager actually plays, and so the only ones worth
+ * *shopping for*: floors, scouting and market search all default to these.
+ *
+ * Rare, super rare and unique are deliberately out. Each rarity costs its own
+ * pair of sub-queries in the floor lookup (any-season and in-season), so
+ * dropping three of five turns every price check from ten sub-queries into
+ * four, against a complexity cap of 500.
+ *
+ * This is a *shopping* filter, not a display one. Anything you already own is
+ * still shown and still valued whatever its rarity — the gallery is driven by
+ * the cards in it, not by this list, so a rare card arriving as a reward can't
+ * silently vanish from the portfolio total.
+ */
+export const TRACKED_RARITIES = ["common", "limited"] as const;
+
 /**
  * So5 score bands, aligned with Sorare's own colour coding (roughly: red
  * below 40, neutral 40-59, green 60+) so a number reads the same colour here
