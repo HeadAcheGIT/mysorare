@@ -168,6 +168,13 @@ export const ALL_RARITIES = ["common", "limited", "rare", "super_rare", "unique"
 export const TRACKED_RARITIES = ["common", "limited"] as const;
 
 /**
+ * The rarity actually competed in, and so the default wherever a screen has to
+ * pick exactly one — the watchlist price check, for instance, which belongs to
+ * a player rather than to a card and has no rarity of its own to go on.
+ */
+export const PRIMARY_RARITY = "limited";
+
+/**
  * So5 score bands, aligned with Sorare's own colour coding (roughly: red
  * below 40, neutral 40-59, green 60+) so a number reads the same colour here
  * as it does on Sorare — rather than a colour relative to the player's own

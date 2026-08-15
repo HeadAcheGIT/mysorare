@@ -3,6 +3,47 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-20 — Le CTA prix montrait le prix d'une carte injouable
+
+Remonté depuis la prod : « le CTA prix est KO ». Deux causes distinctes,
+reproduites en local sur une vraie base.
+
+### Une requête à 501 pour un plafond de 500
+
+La surveillance des enchères échouait à **chaque** appel, et son bandeau
+d'erreur s'affichait au-dessus de la watchlist.
+
+J'avais déduit « ~33 de complexité par enchère, donc 15 par page tient sous
+500 » à partir de deux mesures. Faux : 15 mesure **501**. En interrogeant l'API
+au lieu d'extrapoler — 15 → refusé, 14 → accepté. La page passe à **12**, pas à
+14 : une requête assise à un point d'un plafond dur, c'est exactement comme ça
+que ça a cassé, et un champ ajouté au schéma Sorare suffirait à la refaire
+sauter.
+
+**Le validateur avait pourtant dit OK.** Il envoie `first: 3` à tous les
+documents paginés — il vérifiait donc la forme, jamais la taille réellement
+expédiée. `VARS_BY_QUERY` permet désormais de fixer les variables dont la
+*valeur* fait partie de ce qu'on valide. Contrôlé : remis à 15, le script
+échoue bien.
+
+### 0,33 € pour une carte qui en vaut 5,84 €
+
+Le CTA ne plantait pas — il affichait `limited: 0,33 €`, le floor **toutes
+saisons**, soit le prix d'une carte d'une saison qu'on ne peut pas aligner.
+Exactement le chiffre trompeur signalé le 17/08, jamais corrigé sur cet écran.
+La route renvoyait déjà le floor in-season et la valorisation ; la watchlist
+n'en affichait aucun.
+
+Un seul composant `PriceBreakdown`, partagé par les deux listes, dans l'ordre
+de confiance habituel :
+
+    Valorisation 5,84 € · 15 ventes conclues
+    Floor in-season 14,90 € · Floor toutes saisons 0,33 € (autre saison, non comparable)
+    Sortie récente — les premières séries faussent encore le prix.
+
+Le tri « prix » suivait la même erreur : il prenait le floor le plus bas toutes
+raretés confondues, donc classait Lopez à 0,33 €.
+
 ## 2026-08-19 (nuit) — Limited uniquement côté marché
 
 Précision du manager : il ne joue qu'en limited, donc rare, super rare et

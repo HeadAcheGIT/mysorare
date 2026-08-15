@@ -24,17 +24,24 @@ import type { Valuation } from "../valuation";
  * How much of the feed gets scanned, which depends entirely on whether a
  * Sorare API key is configured.
  *
- * Measured against the live API: this query costs ~33 complexity per auction,
- * so 15 per page is the most that fits the unauthenticated cap of 500, and the
- * rate limit of 20 requests/minute makes each page cost ~3 s. With an API key
- * the cap is 30000 and the limit 600/minute, so pages get bigger and there can
- * be far more of them.
+ * Sizes measured against the live API, not extrapolated. The first version
+ * derived "~33 complexity per auction, so 15 fits under 500" from two data
+ * points and shipped 15 — which actually measures **501** and made every call
+ * fail. Asking the API directly: 15 → 501 (refused), 14 → accepted.
+ *
+ * 12 rather than the maximum 14, because a query sitting one point under a
+ * hard cap is exactly how this broke: any field Sorare adds to the schema
+ * pushes it over with no change on our side.
+ *
+ * The rate limit of 20 requests/minute makes each page cost ~3 s. With an API
+ * key the cap is 30000 and the limit 600/minute, so pages get bigger and there
+ * can be far more of them.
  *
  * The result reports `scanned` and `truncated` either way — partial coverage
  * of a global feed has to be visible, not implied.
  */
 const withKey = () => Boolean(config.sorareApiKey);
-const pageSize = () => (withKey() ? 50 : 15);
+const pageSize = () => (withKey() ? 50 : 12);
 const maxPages = () => (withKey() ? 20 : 6);
 /** Valuations cost one paced request each, so only the first matches get one. */
 const MAX_VALUATIONS = 12;

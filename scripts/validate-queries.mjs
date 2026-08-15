@@ -62,17 +62,31 @@ function extractQueries(src) {
   return out;
 }
 
-function varsFor(body) {
+/**
+ * Per-document overrides, for variables whose *value* is part of what needs
+ * validating rather than just a placeholder to get past coercion.
+ *
+ * Page size is the case that matters: complexity scales with it, so checking a
+ * paginated document at the generic `first: 3` proves nothing about the size it
+ * actually ships with. LIVE_AUCTIONS_PUBLIC passed this script at `first: 3`
+ * and then failed in the app at its real 15 — 501 against a cap of 500. Any
+ * document paged near the ceiling belongs here, set to what the code sends.
+ */
+const VARS_BY_QUERY = {
+  LIVE_AUCTIONS_PUBLIC: { first: 12 },
+};
+
+function varsFor(body, name) {
   const decl = body.match(/(?:query|mutation)\s+\w+\(([^)]*)\)/);
   if (!decl) return {};
   const vars = {};
   for (const part of decl[1].split(",")) {
-    const name = part.trim().match(/^\$(\w+):/)?.[1];
-    if (!name) continue;
-    if (!(name in VARS)) throw new Error(`no sample value for $${name} — add one to VARS`);
-    vars[name] = VARS[name];
+    const varName = part.trim().match(/^\$(\w+):/)?.[1];
+    if (!varName) continue;
+    if (!(varName in VARS)) throw new Error(`no sample value for $${varName} — add one to VARS`);
+    vars[varName] = VARS[varName];
   }
-  return vars;
+  return { ...vars, ...(VARS_BY_QUERY[name] ?? {}) };
 }
 
 /**
@@ -95,7 +109,7 @@ for (const file of files) {
       const r = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query: body, variables: varsFor(body) }),
+        body: JSON.stringify({ query: body, variables: varsFor(body, name) }),
       });
       const err = (await r.json()).errors?.[0]?.message;
       if (!err) verdict = "ok";

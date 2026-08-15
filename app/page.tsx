@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch, ApiFetchError } from "@/lib/apiFetch";
-import { POSITION_SHORT, compareNullable, u23SortValue, type SquadCard, type SquadResponse } from "@/lib/types";
+import { POSITION_SHORT, PRIMARY_RARITY, compareNullable, u23SortValue, type SquadCard, type SquadResponse } from "@/lib/types";
 import PlayerCard from "./components/PlayerCard";
 import AlertBadges, { type PlayerAlert } from "./components/AlertBadges";
 import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, HistoryIcon, DataIcon } from "./components/NavIcons";
@@ -34,6 +34,80 @@ type SavedLineup = {
 };
 
 const msg = (e: unknown) => (e instanceof ApiFetchError || e instanceof Error ? e.message : "Erreur inattendue");
+
+/** What /api/market/price answers with when a rarity is given. */
+type PriceCheck = {
+  floorByRarity: Record<string, number | null>;
+  floorInSeasonByRarity?: Record<string, number | null>;
+  valuation?: { value: number | null; sampleSize: number; launchPremium: boolean; thin: boolean } | null;
+  listedCount: number;
+};
+
+/**
+ * The one number that answers "what does this cost me".
+ *
+ * Completed sales first, then the in-season floor, then the any-season one.
+ * Showing the any-season floor alone — which is what this screen did — meant
+ * a player whose current-season card trades near 6 € displayed 0,33 €, the
+ * price of a card from a season you can't field.
+ */
+function priceHeadline(p: PriceCheck): number | null {
+  if (p.valuation?.value != null) return p.valuation.value;
+  const inSeason = Object.values(p.floorInSeasonByRarity ?? {}).filter((v): v is number => v != null);
+  if (inSeason.length) return Math.min(...inSeason);
+  const any = Object.values(p.floorByRarity).filter((v): v is number => v != null);
+  return any.length ? Math.min(...any) : null;
+}
+
+/**
+ * The result of a price check, ordered by how much it can be trusted.
+ *
+ * The headline is what cards have actually sold for; the floors follow as
+ * context. Both watchlists render this, so the two can't drift into showing
+ * the same player differently.
+ */
+function PriceBreakdown({ price }: { price: PriceCheck }) {
+  const v = price.valuation ?? null;
+  const inSeason = price.floorInSeasonByRarity?.[PRIMARY_RARITY] ?? null;
+  const any = price.floorByRarity?.[PRIMARY_RARITY] ?? null;
+  const eur = (n: number | null) => (n == null ? null : `${n.toFixed(2)} €`);
+
+  return (
+    <div className="mt-2 font-mono text-xs text-muted space-y-0.5">
+      {v?.value != null ? (
+        <p className="text-fg">
+          <span className="text-muted">Valorisation </span>
+          <span className="font-bold">{eur(v.value)}</span>
+          <span className="text-muted">
+            {" "}
+            · {v.sampleSize} vente{v.sampleSize > 1 ? "s" : ""} conclue{v.sampleSize > 1 ? "s" : ""}
+          </span>
+        </p>
+      ) : (
+        <p>Pas de vente conclue récente — impossible de valoriser.</p>
+      )}
+
+      <p>
+        {/* An in-season card is only comparable to other in-season cards, so
+            the any-season floor is labelled rather than shown bare. */}
+        {inSeason != null && <>Floor in-season {eur(inSeason)}</>}
+        {inSeason != null && any != null && " · "}
+        {any != null && (
+          <span className={inSeason != null ? "text-muted/70" : undefined}>
+            Floor toutes saisons {eur(any)}
+            {inSeason != null && " (autre saison, non comparable)"}
+          </span>
+        )}
+        {inSeason == null && any == null && "Aucune carte en vente actuellement"}
+      </p>
+
+      {v?.launchPremium && (
+        <p className="text-limited">Sortie récente — les premières séries faussent encore le prix.</p>
+      )}
+      {v?.thin && <p className="text-warn">Échantillon maigre — ordre de grandeur seulement.</p>}
+    </div>
+  );
+}
 
 export default function Page() {
   const [tab, setTab] = useState<"week" | "gallery" | "lineup" | "market" | "history" | "settings">(
@@ -280,16 +354,17 @@ export default function Page() {
   const [newGroupName, setNewGroupName] = useState("");
   const watchlist = watchlistGroups.find((g) => g.id === activeWatchlistGroup)?.items ?? [];
   const [prices, setPrices] = useState<
-    Record<string, { floorByRarity: Record<string, number | null>; listedCount: number } | "loading" | "error">
+    Record<string, PriceCheck | "loading" | "error">
   >({});
-  // Cheapest fetched floor across rarities — "prix" sort only has something to
-  // work with once "Prix" has been clicked on a row, so unpriced items sort
-  // last via compareNullable rather than looking arbitrarily unordered.
+  // What the row is worth, in the same order of trust as everywhere else:
+  // completed sales, then the in-season floor, then the any-season one. The
+  // sort used to take the cheapest floor across rarities, which for an
+  // in-season player meant an old season's card — Maxime Lopez sorted at
+  // 0,33 € while his in-season market was near 6 €.
   function watchlistPriceFloor(slug: string): number | null {
     const p = prices[slug];
     if (!p || p === "loading" || p === "error") return null;
-    const values = Object.values(p.floorByRarity).filter((v): v is number => v != null);
-    return values.length ? Math.min(...values) : null;
+    return priceHeadline(p);
   }
   const sortedWatchlist = useMemo(() => {
     return [...watchlist].sort((a, b) => {
@@ -682,8 +757,12 @@ export default function Page() {
   async function checkPrice(slug: string) {
     setPrices((p) => ({ ...p, [slug]: "loading" }));
     try {
-      const data = await apiFetch<{ floorByRarity: Record<string, number | null>; listedCount: number }>(
-        `/api/market/price?slug=${encodeURIComponent(slug)}`
+      // With a rarity the route also returns what those cards have actually
+      // sold for, not just what someone is asking. Without one it answered
+      // with floors alone — and the watchlist showed the any-season floor,
+      // the least useful figure of the three.
+      const data = await apiFetch<PriceCheck>(
+        `/api/market/price?slug=${encodeURIComponent(slug)}&rarity=${PRIMARY_RARITY}`
       );
       setPrices((p) => ({ ...p, [slug]: data }));
     } catch (err) {
@@ -1060,16 +1139,7 @@ export default function Page() {
                         </div>
                       </div>
                       {price && price !== "loading" && price !== "error" && (
-                        <div className="mt-2 font-mono text-xs text-muted flex flex-wrap gap-x-4 gap-y-1">
-                          {Object.entries(price.floorByRarity)
-                            .filter(([, v]) => v != null)
-                            .map(([r, v]) => (
-                              <span key={r}>
-                                {r}: {v} €
-                              </span>
-                            ))}
-                          {price.listedCount === 0 && <span>Aucune carte en vente actuellement</span>}
-                        </div>
+                        <PriceBreakdown price={price} />
                       )}
                       {price === "error" && <p className="mt-2 text-xs text-warn">Erreur de lecture du marché</p>}
                     </li>
@@ -1202,16 +1272,7 @@ export default function Page() {
                       </div>
                     </div>
                     {price && price !== "loading" && price !== "error" && (
-                      <div className="mt-2 font-mono text-xs text-muted flex flex-wrap gap-x-4 gap-y-1">
-                        {Object.entries(price.floorByRarity)
-                          .filter(([, v]) => v != null)
-                          .map(([r, v]) => (
-                            <span key={r}>
-                              {r}: {v} €
-                            </span>
-                          ))}
-                        {price.listedCount === 0 && <span>Aucune carte en vente</span>}
-                      </div>
+                      <PriceBreakdown price={price} />
                     )}
                     {price === "error" && <p className="mt-2 text-xs text-warn">Erreur de lecture du marché</p>}
                   </li>
