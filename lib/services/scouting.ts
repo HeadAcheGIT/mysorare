@@ -141,7 +141,11 @@ function toMoney(card: { liveSingleSaleOffer?: { receiverSide: { amounts: Amount
 const PLAYER_SALES_QUERY = `
 query PlayerSales($slug: String!, $rarity: Rarity!) {
   anyPlayer(slug: $slug) {
-    tokenPrices(rarity: $rarity, seasonEligibility: IN_SEASON, first: 50) {
+    # "last", not "first": the connection is ordered oldest-first, so "first"
+    # returns the season's opening sales — precisely the launch-premium window
+    # the valuation exists to discount. Harmless while a season is young and
+    # under 50 sales fit, silently wrong for every liquid player after that.
+    tokenPrices(rarity: $rarity, seasonEligibility: IN_SEASON, last: 50) {
       # serialNumber reveals a launch premium — see lib/valuation.ts.
       nodes { date amounts { eurCents usdCents referenceCurrency } card { serialNumber } }
     }

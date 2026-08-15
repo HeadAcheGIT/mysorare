@@ -6,7 +6,7 @@ import MatchList from "./MatchList";
 import PlayerNews from "./PlayerNews";
 import PlayerBadges from "./PlayerBadges";
 import StartProbability from "./StartProbability";
-import { POSITION_LABEL, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
+import { cardValue, POSITION_LABEL, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
 
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
 const eur = (v: number | null | undefined) => (v == null ? "—" : `${v.toFixed(2)} €`);
@@ -58,10 +58,14 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
   const isUnique = card.rarity === "unique";
   // An in-season card is only comparable to other in-season cards.
   const floor = (card.inSeason ? card.floorInSeason : null) ?? card.floorPrice;
-  // Profit measured against the floor that actually applies to this card,
-  // rather than against a different season's price.
-  const reference = card.price ?? floor;
+  const val = card.valuation ?? null;
+  // Profit against completed sales when they exist, and only against the CSV
+  // export otherwise. The export's figures are a snapshot from whenever it was
+  // taken and its floor is any-season, which is how a card bought at 4,87 €
+  // and trading near 5 € came to show a 93 % loss.
+  const reference = cardValue(card);
   const profit = reference != null && card.boughtPrice != null ? reference - card.boughtPrice : null;
+  const profitSource = val?.value != null ? "ventes conclues" : card.price != null ? "prix CSV" : "floor CSV";
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center">
@@ -163,10 +167,54 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
           <div>
             <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">Marché</p>
             <div className="grid grid-cols-2 gap-2">
-              <Stat label="Prix" value={eur(card.price)} />
-              <Stat label={card.inSeason ? "Floor in-season" : "Floor"} value={eur(floor)} />
-              <Stat label="Estimé" value={eur(card.estimatedPrice)} />
+              {/* Completed sales lead, because they're the only figure here
+                  that reflects what someone actually paid. */}
+              <Stat label="Valorisation" value={eur(val?.value)} />
               <Stat label="Acheté" value={eur(card.boughtPrice)} />
+            </div>
+
+            {val?.value != null ? (
+              <p className="mt-1 font-mono text-[11px] text-muted">
+                {val.sampleSize} vente{val.sampleSize > 1 ? "s" : ""}
+                {val.windowDays != null && ` sur ${val.windowDays} j`}
+                {val.low != null && val.high != null && ` · de ${eur(val.low)} à ${eur(val.high)}`}
+                {card.inSeason ? " · marché in-season" : " · marché toutes saisons"}
+              </p>
+            ) : (
+              <p className="mt-1 font-mono text-[11px] text-muted">
+                {val
+                  ? "Aucune vente conclue sur ce marché — rien à quoi comparer."
+                  : "Pas encore valorisée. Lance « Valoriser » depuis la Galerie."}
+              </p>
+            )}
+
+            {/* A number can be precise and still not worth trusting. Both of
+                these say so out loud rather than letting a confident-looking
+                figure carry a decision it can't support. */}
+            {val?.thin && (
+              <p className="mt-1 font-mono text-[11px] text-warn">
+                Échantillon trop maigre ou trop ancien — à prendre comme un ordre de grandeur.
+              </p>
+            )}
+            {val?.launchPremium && (
+              <p className="mt-1 font-mono text-[11px] text-limited">
+                Sortie récente : les premières séries partent bien au-dessus du niveau réel, le prix
+                n&apos;est pas encore stabilisé.
+              </p>
+            )}
+            {val?.trendPct != null && Math.abs(val.trendPct) >= 5 && (
+              <p className={`mt-1 font-mono text-[11px] ${val.trendPct > 0 ? "text-ok" : "text-warn"}`}>
+                Tendance {val.trendPct > 0 ? "+" : ""}
+                {val.trendPct.toFixed(0)} % sur la fenêtre
+              </p>
+            )}
+
+            {/* Kept, but demoted: these come from the SorareScore export and
+                are only as fresh as the last import. */}
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              <Stat label={card.inSeason ? "Floor IS" : "Floor"} value={eur(floor)} />
+              <Stat label="Prix CSV" value={eur(card.price)} />
+              <Stat label="Estimé" value={eur(card.estimatedPrice)} />
             </div>
 
             {/* For an in-season card the any-season floor is usually an old
@@ -190,7 +238,8 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
             {profit != null && (
               <p className={`mt-2 font-mono text-sm ${profit >= 0 ? "text-ok" : "text-warn"}`}>
                 {profit >= 0 ? "+" : ""}
-                {profit.toFixed(2)} € depuis l&apos;achat
+                {profit.toFixed(2)} € depuis l&apos;achat{" "}
+                <span className="text-muted text-[11px]">(vs {profitSource})</span>
               </p>
             )}
           </div>

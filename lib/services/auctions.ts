@@ -147,16 +147,25 @@ export async function watchedAuctions(): Promise<AuctionWatchResult> {
   // One valuation per player+rarity, not per auction — several serials of the
   // same card are routinely up at once, and each would otherwise cost its own
   // paced request.
+  // In-season and classic are separate markets, so they get separate keys —
+  // pricing a classic card off in-season sales would call an old card a
+  // bargain purely because a current-season one costs more.
+  const key = (card: AuctionNode["anyCards"][number]) =>
+    `${card.anyPlayer!.slug}:${card.rarityTyped ?? "limited"}:${card.inSeasonEligible ? "IS" : "C"}`;
+
   const valuations = new Map<string, Valuation | null>();
   const wanted = matches.slice(0, MAX_VALUATIONS);
   for (const { card } of wanted) {
-    const key = `${card.anyPlayer!.slug}:${card.rarityTyped ?? "limited"}`;
-    if (valuations.has(key)) continue;
+    if (valuations.has(key(card))) continue;
     valuations.set(
-      key,
+      key(card),
       // Non-fatal: an auction without a valuation is still worth showing, it
       // just can't be judged.
-      await getPlayerValuation(card.anyPlayer!.slug, card.rarityTyped ?? "limited").catch(() => null)
+      await getPlayerValuation(
+        card.anyPlayer!.slug,
+        card.rarityTyped ?? "limited",
+        Boolean(card.inSeasonEligible)
+      ).catch(() => null)
     );
   }
 
@@ -164,8 +173,7 @@ export async function watchedAuctions(): Promise<AuctionWatchResult> {
   const auctions: WatchedAuction[] = [];
   for (const { node, card } of matches) {
     const { eur, approx } = await currentPriceEur(node);
-    const key = `${card.anyPlayer!.slug}:${card.rarityTyped ?? "limited"}`;
-    const valuation = valuations.get(key) ?? null;
+    const valuation = valuations.get(key(card)) ?? null;
 
     auctions.push({
       cardSlug: card.slug,

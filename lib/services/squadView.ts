@@ -37,7 +37,7 @@ export async function getSquadView(
 ): Promise<{ fixture: string | null; cards: SquadCard[] }> {
   const resolvedFixture = fixture ?? (await currentFixture());
 
-  const [cards, players, clubs, projections, overrides, lastAppearances] = await Promise.all([
+  const [cards, players, clubs, projections, overrides, lastAppearances, valuations] = await Promise.all([
     prisma.card.findMany(rarity ? { where: { rarity } } : undefined),
     prisma.player.findMany(),
     prisma.club.findMany(),
@@ -59,6 +59,10 @@ export async function getSquadView(
       where: { minutes: { gt: 0 } },
       _max: { gameDate: true },
     }),
+    // What cards actually fetch, from completed sales. Read from cache rather
+    // than computed here: one un-batchable Sorare request per market would put
+    // minutes on a gallery load. Refreshed by /api/valuations/sync.
+    prisma.playerValuation.findMany(),
   ]);
 
   const playerMap = new Map(players.map((p) => [p.slug, p]));
@@ -66,6 +70,12 @@ export async function getSquadView(
   const projMap = new Map(projections.map((p) => [p.playerSlug, p]));
   const overrideMap = new Map(overrides.map((o) => [o.playerSlug, o]));
   const lastPlayedMap = new Map(lastAppearances.map((a) => [a.playerSlug, a._max.gameDate ?? null]));
+  // Keyed on eligibility too: in-season and classic are separate markets, and
+  // collapsing them would price an old Lopez card at the in-season 6,68 €
+  // instead of the 0,46 € it trades at.
+  const valuationMap = new Map(
+    valuations.map((v) => [`${v.playerSlug}:${v.rarity}:${v.inSeason}`, v])
+  );
 
   const out: SquadCard[] = cards
     // Annotated so the shape is checked against SquadCard here rather than
@@ -76,6 +86,7 @@ export async function getSquadView(
       const proj = projMap.get(p.slug);
       const ov = overrideMap.get(p.slug);
       const club = p.clubSlug ? clubMap.get(p.clubSlug) : null;
+      const val = valuationMap.get(`${c.playerSlug}:${c.rarity}:${c.inSeason}`) ?? null;
       return {
         cardSlug: c.slug,
         playerSlug: p.slug,
@@ -125,6 +136,22 @@ export async function getSquadView(
         boughtPriceApprox: c.boughtPriceApprox,
         acquiredVia: c.acquiredVia,
         paidWithCredits: c.paidWithCredits,
+        // Mapped field by field rather than spread: the row carries the
+        // composite key and computedAt too, which aren't part of a Valuation.
+        valuation: val
+          ? {
+              value: val.value,
+              low: val.low,
+              high: val.high,
+              sampleSize: val.sampleSize,
+              totalSales: val.totalSales,
+              windowDays: val.windowDays,
+              daysSinceLast: val.daysSinceLast,
+              trendPct: val.trendPct,
+              launchPremium: val.launchPremium,
+              thin: val.thin,
+            }
+          : null,
       };
     })
     .filter((x): x is SquadCard => x != null)

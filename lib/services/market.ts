@@ -116,9 +116,14 @@ export async function searchPlayers(query: string): Promise<PlayerSearchResult[]
  * by 38%, with the listing the higher of the pair — see lib/valuation.ts.
  */
 const SALES_QUERY = `
-query PlayerSales($slug: String!, $rarity: Rarity!) {
+query PlayerSales($slug: String!, $rarity: Rarity!, $eligibility: SeasonEligibility!) {
   anyPlayer(slug: $slug) {
-    tokenPrices(rarity: $rarity, seasonEligibility: IN_SEASON, first: 50) {
+    # "last", not "first": this connection is ordered oldest-first, so "first"
+    # pins the window to the season's opening sales — exactly the launch
+    # premium the valuation exists to discount. It looks correct while a season
+    # is young enough that every sale fits in one page, then quietly stops
+    # tracking the market for any player who trades more than 50 times.
+    tokenPrices(rarity: $rarity, seasonEligibility: $eligibility, last: 50) {
       nodes {
         date
         amounts { eurCents }
@@ -130,7 +135,19 @@ query PlayerSales($slug: String!, $rarity: Rarity!) {
   }
 }`;
 
-export async function getPlayerValuation(slug: string, rarity: string): Promise<Valuation> {
+/**
+ * What cards of this player and rarity actually fetch.
+ *
+ * `inSeason` picks which market is being asked about, and the two are not
+ * interchangeable: on Maxime Lopez the in-season limited traded around 5 €
+ * while an older season went for 0,33 €. Valuing a classic card off in-season
+ * sales — which is what this did before — overstates it by that whole factor.
+ */
+export async function getPlayerValuation(
+  slug: string,
+  rarity: string,
+  inSeason = true
+): Promise<Valuation> {
   const data = await publicGraphql<{
     anyPlayer: {
       tokenPrices: {
@@ -141,7 +158,7 @@ export async function getPlayerValuation(slug: string, rarity: string): Promise<
         }[];
       };
     } | null;
-  }>(SALES_QUERY, { slug, rarity });
+  }>(SALES_QUERY, { slug, rarity, eligibility: inSeason ? "IN_SEASON" : "CLASSIC" });
 
   const sales: Sale[] = (data.anyPlayer?.tokenPrices?.nodes ?? [])
     // EUR only: mixing a USD figure in would shift the median by an invented

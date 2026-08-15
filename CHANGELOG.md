@@ -3,6 +3,52 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-19 — La valorisation atteint enfin toute l'app
+
+La valorisation existait depuis deux jours mais ne servait qu'au scouting et à
+la fiche joueur. Partout ailleurs — galerie, insights, bilan, conseiller de
+division — une carte valait ce qu'en disait l'export CSV SorareScore. Deux
+défauts d'un coup : le chiffre datait du dernier import, et son floor est
+**toutes saisons**. Une galerie synchronisée par l'API, elle, n'avait aucun
+prix du tout.
+
+### Deux bugs trouvés en branchant le reste
+
+**La fenêtre de ventes glissait vers les prix de lancement.** `tokenPrices`
+renvoie du **plus ancien au plus récent** : `first: 50` ne prend donc pas les
+50 dernières ventes mais les 50 **premières**, c'est-à-dire exactement la
+fenêtre de sortie que la valorisation est censée écarter. Invisible tant qu'une
+saison tient sous 50 ventes — Lopez en était à 37 — puis faux en permanence
+pour tout joueur liquide. Corrigé en `last: 50`.
+
+**Les cartes hors in-season étaient valorisées sur le marché in-season.**
+Mesuré le même jour sur Maxime Lopez limited : **6,68 € in-season contre
+0,46 € toutes saisons**, un facteur 14. `seasonEligibility` est désormais un
+paramètre, et les deux marchés sont stockés et affichés séparément.
+
+### Une seule source de vérité
+
+Nouvelle table `PlayerValuation`, une ligne par joueur × rareté × éligibilité,
+alimentée par `/api/valuations/sync` (bouton « Valoriser ma galerie »). En
+cache parce qu'une valorisation coûte une requête Sorare non groupable : la
+calculer au chargement mettrait des minutes sur une grosse galerie.
+
+Le rafraîchissement traite d'abord les marchés **jamais calculés** — ceux qui
+affichent « — », le pire état — puis les plus anciens, et ignore ce qui a moins
+de 6 h. Une relance immédiate ne coûte donc rien.
+
+Tout le monde lit maintenant le même `cardValue()` : ventes conclues, puis prix
+CSV, puis floor CSV, et `null` plutôt que 0 quand rien n'est connu — un 0 se
+serait additionné dans le total du portefeuille comme une carte sans valeur.
+
+### Ce que ça change à l'écran
+
+La fiche joueur mène avec la valorisation, le nombre de ventes qui la soutient
+et sa fourchette ; le floor et les chiffres CSV passent en dessous, étiquetés
+comme tels. La plus-value indique face à quoi elle est calculée. Échantillon
+maigre, sortie récente et tendance sont dits explicitement : un chiffre peut
+être précis et ne rien valoir.
+
 ## 2026-08-18 (soir) — Surveillance des enchères sur les joueurs suivis
 
 Sorare expose bien les enchères en temps réel, mais son flux est **global et

@@ -4,6 +4,9 @@
  * without dragging server code into the browser bundle.
  */
 
+// Pure module, no server import — safe to re-export to the client.
+import type { Valuation } from "./valuation";
+
 export interface SquadCard {
   cardSlug: string;
   playerSlug: string;
@@ -75,6 +78,35 @@ export interface SquadCard {
    * trading for cents and makes the card look worthless.
    */
   floorInSeason?: number | null;
+  /**
+   * What this card actually fetches, from completed sales of the same player,
+   * rarity and season eligibility (`lib/valuation.ts`, cached in
+   * `PlayerValuation`).
+   *
+   * This is the figure to trust over `price` / `floorPrice` / `estimatedPrice`,
+   * which come from a SorareScore CSV export: they're a snapshot from whenever
+   * the export was taken, and their floor is any-season, which read 0,33 € for
+   * a Maxime Lopez card trading around 5 € in-season.
+   *
+   * Null until the valuation sync has covered this market.
+   */
+  valuation?: Valuation | null;
+}
+
+/**
+ * The number to display and reason about for a card, in order of trust:
+ * completed sales first, then the CSV's own market price, then its floor.
+ *
+ * Shared so the gallery, the insights, the season report and the advisor can't
+ * drift into valuing the same card differently — which is precisely what they
+ * did while each reached for `floorPrice` on its own.
+ */
+export function cardValue(card: {
+  valuation?: Valuation | null;
+  price?: number | null;
+  floorPrice?: number | null;
+}): number | null {
+  return card.valuation?.value ?? card.price ?? card.floorPrice ?? null;
 }
 
 export type SquadResponse = { fixture: string | null; cards: SquadCard[] };

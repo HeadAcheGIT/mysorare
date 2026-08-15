@@ -15,7 +15,7 @@ export type Insight = {
   birthDate: string | null;
   competitionName: string | null;
   reason: string;
-  floorPrice: number | null;
+  value: number | null;
   boughtPrice: number | null;
   expected: number | null;
   pStart: number | null;

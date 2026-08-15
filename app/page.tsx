@@ -201,6 +201,7 @@ export default function Page() {
   const [syncingFriendlies, setSyncingFriendlies] = useState(false);
   const [syncingForm, setSyncingForm] = useState(false);
   const [syncingAcquisitions, setSyncingAcquisitions] = useState(false);
+  const [syncingValuations, setSyncingValuations] = useState(false);
   const [notice, setNotice] = useState("");
 
   // Market
@@ -610,6 +611,48 @@ export default function Page() {
       setError(msg(err));
     } finally {
       setSyncingAcquisitions(false);
+    }
+  }
+
+  /**
+   * Prices every card in the gallery off completed sales.
+   *
+   * Looped rather than one call: a valuation is one un-batchable Sorare
+   * request paced at ~3.2 s, so a full gallery can't fit in a single
+   * serverless invocation. Each pass takes the stalest markets first, so an
+   * interrupted run still leaves the gallery better off than it started.
+   */
+  async function syncValuations() {
+    setSyncingValuations(true);
+    setNotice("");
+    try {
+      let done = 0;
+      let failed = 0;
+      let guard = 0;
+      for (;;) {
+        const batch = await apiFetch<{
+          processed: number;
+          remaining: number;
+          total: number;
+          failed: number;
+        }>("/api/valuations/sync", { method: "POST" });
+        done += batch.processed;
+        failed += batch.failed;
+        setNotice(`Valorisation : ${done} marché(s) sur ${done + batch.remaining}`);
+        if (batch.remaining === 0 || batch.processed === 0) break;
+        if (++guard > 200) break;
+      }
+      await refreshAll();
+      await loadLogs();
+      setNotice(
+        done === 0
+          ? "Valorisations déjà à jour."
+          : `${done} marché(s) valorisé(s)${failed > 0 ? `, ${failed} en échec` : ""}.`
+      );
+    } catch (err) {
+      setError(msg(err));
+    } finally {
+      setSyncingValuations(false);
     }
   }
 
@@ -1317,6 +1360,20 @@ export default function Page() {
               Lit le registre de propriété public de chaque carte : enchères, achats directs, offres,
               récompenses et packs — là où la synchro des ventes ne voyait que les ventes directes. Repère
               aussi les achats réglés en crédits. Aucune connexion requise.
+            </p>
+
+            <button
+              onClick={syncValuations}
+              disabled={syncingValuations}
+              className="w-full border border-line font-bold py-3 rounded-md text-sm disabled:opacity-50"
+            >
+              {syncingValuations ? "Valorisation…" : "Valoriser ma galerie"}
+            </button>
+            <p className="font-mono text-xs text-muted">
+              Calcule ce que vaut réellement chaque carte à partir des ventes conclues, et non d&apos;une
+              annonce ou d&apos;un export figé. In-season et toutes saisons sont deux marchés distincts et
+              sont valorisés séparément. Une carte par marché, une requête par marché : compte quelques
+              minutes sur une grosse galerie sans clé API. Aucune connexion requise.
             </p>
 
             <button

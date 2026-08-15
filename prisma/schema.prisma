@@ -554,6 +554,48 @@ model WatchlistItem {
   @@index([groupId])
 }
 
+/// What cards of a given player, rarity and season eligibility actually fetch
+/// on the market, computed from completed sales by `lib/valuation.ts`.
+///
+/// Cached rather than computed on read: each row costs one Sorare request that
+/// can't be batched (`tokenPrices` only resolves under a single `anyPlayer`),
+/// so a gallery of 200 cards would otherwise take minutes to render. The
+/// gallery, the insights, the season report and the division advisor all read
+/// this table, which is what makes them agree on a card's worth — before it,
+/// each valued cards from a stale CSV export.
+///
+/// `inSeason` is part of the key because the two are different markets, not
+/// two views of one: Maxime Lopez limited traded at 6,68 € in-season against
+/// 0,46 € classic on the same day.
+model PlayerValuation {
+  playerSlug String
+  rarity     String
+  inSeason   Boolean
+
+  /// Recency-weighted median, in EUR. Null when no sale could be priced.
+  value Float?
+  low   Float?
+  high  Float?
+  /// Sales used after windowing and outlier removal.
+  sampleSize Int
+  /// Sales available before windowing, so a narrow window stays visible.
+  totalSales Int
+  windowDays Int?
+  /// Age of the most recent sale, in days — a valuation can be precise and stale.
+  daysSinceLast Int?
+  trendPct      Float?
+  /// True when early serials sold far above the current level: the season's
+  /// drop is still settling and older prices are not a guide.
+  launchPremium Boolean @default(false)
+  /// True when too few or too old to lean on. The UI says so rather than
+  /// presenting a confident number built on two sales.
+  thin      Boolean  @default(false)
+  computedAt DateTime @default(now())
+
+  @@id([playerSlug, rarity, inSeason])
+  @@index([computedAt])
+}
+
 /// Caches the mapping from our own club/player slugs to API-Football's ids,
 /// so we search their /teams and /players endpoints once per entity instead
 /// of on every lineup check (their free tier is 100 requests/day).

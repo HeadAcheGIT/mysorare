@@ -1,5 +1,5 @@
 import { prisma } from "../prisma";
-import type { SquadCard } from "../types";
+import { cardValue, type SquadCard } from "../types";
 
 /**
  * Turns a large gallery into a short list of things worth acting on.
@@ -28,7 +28,13 @@ export interface Insight {
   reason: string;
   /// Sort key within a group — bigger means "look at this first".
   weight: number;
-  floorPrice: number | null;
+  /**
+   * What the card is worth, from completed sales when they're known and the
+   * CSV export otherwise (see `cardValue`). Was the CSV floor alone, which is
+   * an any-season figure: it valued an in-season card at the price of an old
+   * season's, and every "loss" and "sell high" here was computed from it.
+   */
+  value: number | null;
   boughtPrice: number | null;
   expected: number | null;
   pStart: number | null;
@@ -63,16 +69,18 @@ function trend(scores: number[]): number | null {
 export async function buildInsights(
   fixtureSlug: string | null
 ): Promise<{ groups: InsightGroup[]; unenriched: number }> {
-  const [cards, players, clubs, projections] = await Promise.all([
+  const [cards, players, clubs, projections, valuations] = await Promise.all([
     prisma.card.findMany(),
     prisma.player.findMany(),
     prisma.club.findMany(),
     fixtureSlug ? prisma.projection.findMany({ where: { fixtureSlug } }) : Promise.resolve([]),
+    prisma.playerValuation.findMany(),
   ]);
 
   const playerMap = new Map(players.map((p) => [p.slug, p]));
   const clubMap = new Map(clubs.map((c) => [c.slug, c]));
   const projMap = new Map(projections.map((p) => [p.playerSlug, p]));
+  const valuationMap = new Map(valuations.map((v) => [`${v.playerSlug}:${v.rarity}:${v.inSeason}`, v]));
 
   const dead: Insight[] = [];
   const underused: Insight[] = [];
@@ -99,6 +107,13 @@ export async function buildInsights(
 
     const proj = projMap.get(p.slug);
     const club = p.clubSlug ? clubMap.get(p.clubSlug) : null;
+    // One figure for the whole loop, so every signal below judges the card on
+    // the same number instead of each reaching for the CSV floor.
+    const value = cardValue({
+      valuation: valuationMap.get(`${c.playerSlug}:${c.rarity}:${c.inSeason}`) ?? null,
+      price: c.price,
+      floorPrice: c.floorPrice,
+    });
 
     let scores: number[] = [];
     try {
@@ -118,7 +133,7 @@ export async function buildInsights(
       rarity: c.rarity,
       birthDate: p.birthDate?.toISOString() ?? null,
       competitionName: club?.competitionName ?? null,
-      floorPrice: c.floorPrice,
+      value,
       boughtPrice: c.boughtPrice,
       expected: proj?.expectedScore ?? null,
       pStart: proj?.pStart ?? null,
@@ -133,22 +148,22 @@ export async function buildInsights(
         ...common,
         kind: "unavailable",
         reason: p.suspended ? "Suspendu" : `Blessé — ${p.injuryStatus}`,
-        weight: c.floorPrice ?? 0,
+        weight: value ?? 0,
       });
     } else if (!p.clubSlug) {
       dead.push({
         ...common,
         kind: "dead_weight",
         reason: "Sans club — ne peut plus marquer",
-        weight: c.floorPrice ?? 0,
+        weight: value ?? 0,
       });
     } else if (playRate != null && playRate <= 0.2) {
       // Barely plays: the card can't score, whatever the player's talent.
       dead.push({
         ...common,
         kind: "dead_weight",
-        reason: `${p.app15}/15 matchs joués · ${eur(c.floorPrice)}`,
-        weight: c.floorPrice ?? 0,
+        reason: `${p.app15}/15 matchs joués · ${eur(value)}`,
+        weight: value ?? 0,
       });
     } else if (playRate != null && playRate >= 0.8 && (p.avgL10Played ?? 0) >= 45) {
       // Plays every week and scores well — worth checking you're fielding it.
@@ -166,14 +181,14 @@ export async function buildInsights(
     }
 
     // Valuation signals, only where the CSV carried prices.
-    if (c.floorPrice != null && c.boughtPrice != null) {
-      const delta = c.floorPrice - c.boughtPrice;
+    if (value != null && c.boughtPrice != null) {
+      const delta = value - c.boughtPrice;
       const ratio = c.boughtPrice > 0 ? delta / c.boughtPrice : 0;
       if (ratio <= -0.35 && c.boughtPrice >= 1) {
         losses.push({
           ...common,
           kind: "loss",
-          reason: `${eur(c.boughtPrice)} → ${eur(c.floorPrice)} (${(ratio * 100).toFixed(0)} %)`,
+          reason: `${eur(c.boughtPrice)} → ${eur(value)} (${(ratio * 100).toFixed(0)} %)`,
           weight: -delta,
         });
       }
@@ -181,12 +196,12 @@ export async function buildInsights(
 
     // Expensive card whose player has stopped delivering: the clearest sell
     // candidate, since the market hasn't caught up with the form yet.
-    if (c.floorPrice != null && c.floorPrice >= 3 && p.avgL10Played != null && p.avgL10Played < 35) {
+    if (value != null && value >= 3 && p.avgL10Played != null && p.avgL10Played < 35) {
       sellHigh.push({
         ...common,
         kind: "sell_high",
-        reason: `${eur(c.floorPrice)} mais moyenne ${p.avgL10Played.toFixed(0)}`,
-        weight: c.floorPrice,
+        reason: `${eur(value)} mais moyenne ${p.avgL10Played.toFixed(0)}`,
+        weight: value,
       });
     }
 
@@ -245,16 +260,54 @@ export async function buildInsights(
   return { groups: groups.filter((g) => g.items.length > 0), unenriched };
 }
 
-/** Portfolio totals for the dashboard header. */
+/**
+ * Portfolio totals for the dashboard header.
+ *
+ * Summed on the same `cardValue` the rest of the app uses. Summing the CSV
+ * floor instead — as this did — understated the whole gallery by however much
+ * of it is in-season, since that floor is the cheapest card of *any* season.
+ */
 export async function portfolioSummary() {
-  const cards = await prisma.card.findMany({
-    select: { floorPrice: true, boughtPrice: true, rarity: true },
-  });
-  const value = cards.reduce((s, c) => s + (c.floorPrice ?? 0), 0);
+  const [cards, valuations] = await Promise.all([
+    prisma.card.findMany({
+      select: {
+        playerSlug: true,
+        rarity: true,
+        inSeason: true,
+        price: true,
+        floorPrice: true,
+        boughtPrice: true,
+      },
+    }),
+    prisma.playerValuation.findMany(),
+  ]);
+
+  const valuationMap = new Map(valuations.map((v) => [`${v.playerSlug}:${v.rarity}:${v.inSeason}`, v]));
+
+  let value = 0;
+  /** Cards with no value at all, so a total built on half the gallery says so. */
+  let unvalued = 0;
+  for (const c of cards) {
+    const v = cardValue({
+      valuation: valuationMap.get(`${c.playerSlug}:${c.rarity}:${c.inSeason}`) ?? null,
+      price: c.price,
+      floorPrice: c.floorPrice,
+    });
+    if (v == null) unvalued++;
+    else value += v;
+  }
+
   const spent = cards.reduce((s, c) => s + (c.boughtPrice ?? 0), 0);
   const byRarity: Record<string, number> = {};
   for (const c of cards) byRarity[c.rarity] = (byRarity[c.rarity] ?? 0) + 1;
-  return { cards: cards.length, value, spent, delta: spent > 0 ? value - spent : null, byRarity };
+  return {
+    cards: cards.length,
+    value,
+    spent,
+    delta: spent > 0 ? value - spent : null,
+    byRarity,
+    unvalued,
+  };
 }
 
 export type { SquadCard };

@@ -75,31 +75,49 @@ export function estimateGapCost(
 }
 
 /**
- * Price samples from the in-season cards already valued in the gallery
- * (SorareScore's `floorPrice`, see lib/services/csvImport.ts).
+ * Price samples from the in-season cards already in the gallery.
  *
  * The alternative was scouting the live market per position and rarity, which
  * is one paced public-API round trip per league — tens of seconds before the
  * screen could show anything. These valuations are already local and free.
  *
- * The trade-off is real and the UI says so: this is what in-season cards at
- * that position and rarity are worth *in your gallery*, which skews toward
- * what you already chose to buy. It sizes a decision; it doesn't quote a
- * purchase.
+ * Priced from completed in-season sales (`PlayerValuation`), falling back to
+ * the CSV export only where no valuation exists yet. The fallback is genuinely
+ * a fallback: the CSV's `floorPrice` is an *any-season* floor, so using it as
+ * an in-season price — which is what this did — sized every budget off the
+ * wrong market. Measured on Maxime Lopez limited the same day: 6,68 €
+ * in-season against 0,46 € classic.
+ *
+ * The remaining trade-off is real and the UI says so: this is what in-season
+ * cards at that position and rarity are worth *in your gallery*, which skews
+ * toward what you already chose to buy. It sizes a decision; it doesn't quote
+ * a purchase.
  */
 export async function marketSamplesFromGallery(): Promise<MarketSample[]> {
-  const cards = await prisma.card.findMany({
-    where: { inSeason: true, floorPrice: { not: null } },
-    select: { rarity: true, floorPrice: true, player: { select: { position: true } } },
-  });
+  const [cards, valuations] = await Promise.all([
+    prisma.card.findMany({
+      where: { inSeason: true },
+      select: {
+        playerSlug: true,
+        rarity: true,
+        floorPrice: true,
+        player: { select: { position: true } },
+      },
+    }),
+    prisma.playerValuation.findMany({ where: { inSeason: true } }),
+  ]);
+
+  const valuationMap = new Map(valuations.map((v) => [`${v.playerSlug}:${v.rarity}`, v]));
 
   return cards
-    .filter((c) => c.floorPrice != null && c.floorPrice > 0)
     .map((c) => ({
       position: c.player.position,
       rarity: c.rarity,
-      inSeasonFloorEur: c.floorPrice as number,
-    }));
+      // No `price` in the chain here: this samples a market, and the CSV's
+      // per-card "price" is that one card's listing rather than a level.
+      inSeasonFloorEur: valuationMap.get(`${c.playerSlug}:${c.rarity}`)?.value ?? c.floorPrice,
+    }))
+    .filter((s): s is MarketSample => s.inSeasonFloorEur != null && s.inSeasonFloorEur > 0);
 }
 
 export interface OpportunityInput {
