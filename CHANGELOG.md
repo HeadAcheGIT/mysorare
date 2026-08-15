@@ -11,7 +11,7 @@ sans filtre par joueur** : l'app le parcourt et croise avec la watchlist.
 ### Une enchère en cours n'est pas un prix de marché
 
 C'est un prix *à cet instant*. Chaque ligne est donc affichée face à la
-valorisation du joueur () plutôt qu'en montant brut, avec un
+valorisation du joueur (`lib/valuation.ts`) plutôt qu'en montant brut, avec un
 verdict explicite : sous le marché, au prix, au-dessus, ou « pas assez de
 ventes pour juger » quand la valorisation manque.
 
@@ -21,7 +21,7 @@ l'occasion. Les enchères terminées descendent en bas quel que soit leur prix.
 
 ### Prix en euros, y compris sans enchérisseur
 
- dès qu'une offre existe. Sinon il ne reste que le
+`bestBid.amounts.eurCents` dès qu'une offre existe. Sinon il ne reste que le
 prix de départ en wei, converti au cours du jour et marqué « ≈ » — un montant
 converti ne doit pas se lire comme un montant exact.
 
@@ -30,10 +30,10 @@ converti ne doit pas se lire comme un montant exact.
 Mesuré sur l'API : ~33 points de complexité par enchère, donc 15 par page au
 maximum sous le plafond de 500 sans clé, et 3 s par page à 20 requêtes/min.
 L'écran affiche le nombre d'enchères parcourues et signale quand la recherche
-s'est arrêtée avant la fin du flux. Avec  : 50 par page et 20
+s'est arrêtée avant la fin du flux. Avec `SORARE_API_KEY` : 50 par page et 20
 pages au lieu de 6.
 
- faussait toutes les valorisations
+## 2026-08-18 — La prime de lancement faussait toutes les valorisations
 
 Données brutes complètes fournies pour Maxime Lopez 2026-27 Limited, avec
 l'observation décisive : « à chaque saison, les premiers prix sont surévalués ».
