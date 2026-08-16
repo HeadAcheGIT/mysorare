@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch, ApiFetchError } from "@/lib/apiFetch";
-import { POSITION_SHORT, PRIMARY_RARITY, compareNullable, u23SortValue, type SquadCard, type SquadResponse } from "@/lib/types";
+import { POSITION_SHORT, PRIMARY_RARITY, cardValue, compareNullable, u23SortValue, type SquadCard, type SquadResponse } from "@/lib/types";
 import PlayerCard from "./components/PlayerCard";
 import AlertBadges, { type PlayerAlert } from "./components/AlertBadges";
 import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, HistoryIcon, DataIcon } from "./components/NavIcons";
 import PlayerSheet from "./components/PlayerSheet";
-import GalleryFilters, { type SortKey, type SortDirection, DEFAULT_DIRECTION } from "./components/GalleryFilters";
+import GalleryFilters, { type SortKey, type SortDirection, type DivisionOption, DEFAULT_DIRECTION } from "./components/GalleryFilters";
 import SortControl from "./components/SortControl";
 import GallerySummary from "./components/GallerySummary";
 import CsvImport from "./components/CsvImport";
@@ -22,6 +22,7 @@ import DivisionBoard from "./components/DivisionBoard";
 import InSeasonAdvisor from "./components/InSeasonAdvisor";
 import SeasonReport from "./components/SeasonReport";
 import AuctionWatch from "./components/AuctionWatch";
+import SyncAll from "./components/SyncAll";
 
 type SavedLineup = {
   id: number;
@@ -160,6 +161,21 @@ export default function Page() {
   const [sort, setSort] = useState<SortKey>("score");
   const [direction, setDirection] = useState<SortDirection>(DEFAULT_DIRECTION.score);
   const [inSeasonOnly, setInSeasonOnly] = useState(false);
+  /**
+   * Filter the gallery down to what Sorare says is eligible for one division.
+   *
+   * `null` means no division filter. Eligibility isn't re-derived locally — a
+   * division's bench already accounts for rarity, seasonality and cards
+   * committed to another line-up, and guessing at those rules would produce a
+   * list that disagrees with Sorare precisely when it matters.
+   */
+  const [division, setDivision] = useState("");
+  const [divisionOptions, setDivisionOptions] = useState<DivisionOption[]>([]);
+  const [eligibleCards, setEligibleCards] = useState<Set<string> | null>(null);
+  const [divisionLoading, setDivisionLoading] = useState(false);
+  const [divisionNote, setDivisionNote] = useState<string | null>(null);
+  /** Pagination: a 400-card gallery rendered whole is unusable on a phone. */
+  const [page, setPage] = useState(1);
 
   // Line-up — les compos réelles vivent dans DivisionBoard ; il ne reste ici
   // que la liste des compos sauvegardées par l'ancien composeur, conservée en
@@ -270,12 +286,8 @@ export default function Page() {
     canReadLineups: boolean;
     oauthConfigured: boolean;
   } | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const [checkingLineups, setCheckingLineups] = useState(false);
   const [syncingFriendlies, setSyncingFriendlies] = useState(false);
-  const [syncingForm, setSyncingForm] = useState(false);
-  const [syncingAcquisitions, setSyncingAcquisitions] = useState(false);
-  const [syncingValuations, setSyncingValuations] = useState(false);
   const [importingWatchlists, setImportingWatchlists] = useState(false);
   const [notice, setNotice] = useState("");
 
@@ -497,6 +509,7 @@ export default function Page() {
       if (position && c.position !== position) return false;
       if (rarity && c.rarity !== rarity) return false;
       if (inSeasonOnly && !c.inSeason) return false;
+      if (eligibleCards && !eligibleCards.has(c.cardSlug)) return false;
       if (!q) return true;
       return c.name.toLowerCase().includes(q) || (c.club ?? "").toLowerCase().includes(q);
     });
@@ -510,13 +523,101 @@ export default function Page() {
         const cmp = a.name.localeCompare(b.name, "fr");
         return direction === "asc" ? cmp : -cmp;
       }
-      if (sort === "price") return compareNullable(a.floorPrice, b.floorPrice, direction);
+      // cardValue, not floorPrice: the CSV floor is an any-season figure, so
+      // sorting on it ranked in-season cards by what an old season is worth.
+      if (sort === "price") return compareNullable(cardValue(a), cardValue(b), direction);
       if (sort === "form") return compareNullable(formAvg(a), formAvg(b), direction);
       if (sort === "titu") return compareNullable(a.pStart, b.pStart, direction);
       if (sort === "u23") return compareNullable(u23SortValue(a.birthDate), u23SortValue(b.birthDate), direction);
       return compareNullable(score(a), score(b), direction);
     });
-  }, [squad, search, position, rarity, inSeasonOnly, sort, direction]);
+  }, [squad, search, position, rarity, inSeasonOnly, eligibleCards, sort, direction]);
+
+  const PAGE_SIZE = 48;
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  // Clamped rather than reset in an effect: a filter change that shortens the
+  // list must never leave the view on a page that no longer exists.
+  const currentPage = Math.min(page, pageCount);
+  const paged = useMemo(
+    () => visible.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [visible, currentPage]
+  );
+
+  // Back to the first page whenever the list itself changes, so narrowing a
+  // filter doesn't land on an empty page.
+  useEffect(() => {
+    setPage(1);
+  }, [search, position, rarity, inSeasonOnly, division, sort, direction]);
+
+  /**
+   * The divisions available for the eligibility filter.
+   *
+   * Loaded once per game week when the gallery opens, and only when signed in
+   * — divisions come from `currentUser`, so signed out there is simply nothing
+   * to offer and the filter hides itself rather than showing an empty select.
+   */
+  useEffect(() => {
+    if (tab !== "gallery" || !fixture || !tokenStatus?.signedIn) return;
+    let cancelled = false;
+    apiFetch<{ tracks: { displayName: string; divisions: { slug: string; displayName: string }[] }[] }>(
+      `/api/divisions?fixture=${encodeURIComponent(fixture)}`
+    )
+      .then((d) => {
+        if (cancelled) return;
+        setDivisionOptions(
+          d.tracks.flatMap((t) =>
+            t.divisions.map((div) => ({ slug: div.slug, label: `${t.displayName} · ${div.displayName}` }))
+          )
+        );
+      })
+      // Non-fatal: the gallery is the app's main screen and must not break
+      // because an optional filter couldn't populate.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, fixture, tokenStatus?.signedIn]);
+
+  /** Reads the chosen division's real bench and keeps its card slugs. */
+  useEffect(() => {
+    if (!division || !fixture) {
+      setEligibleCards(null);
+      setDivisionNote(null);
+      return;
+    }
+    let cancelled = false;
+    setDivisionLoading(true);
+    setDivisionNote(null);
+    // validate=0 skips the previewSo5Lineup round trip: this filter needs the
+    // bench, not Sorare's verdict on a proposed line-up.
+    apiFetch<{ bench: { cardSlug: string | null; locked: boolean }[] }>(
+      `/api/divisions/bench?leaderboard=${encodeURIComponent(division)}&fixture=${encodeURIComponent(
+        fixture
+      )}&validate=0`
+    )
+      .then((d) => {
+        if (cancelled) return;
+        const slugs = d.bench.map((b) => b.cardSlug).filter((s): s is string => Boolean(s));
+        setEligibleCards(new Set(slugs));
+        const locked = d.bench.filter((b) => b.locked).length;
+        setDivisionNote(
+          `${slugs.length} carte(s) éligible(s)` + (locked > 0 ? ` · ${locked} déjà engagée(s) ailleurs` : "")
+        );
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        // Showing the whole gallery is the honest fallback — filtering to an
+        // empty set would read as "you own nothing eligible".
+        setEligibleCards(null);
+        setDivisionNote(msg(err));
+      })
+      .finally(() => {
+        if (!cancelled) setDivisionLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [division, fixture]);
 
 
   async function deleteSavedLineup(id: number) {
@@ -532,39 +633,6 @@ export default function Page() {
   const refreshAll = useCallback(async () => {
     await Promise.all([loadSquad(), loadGameWeek(), loadInsights()]);
   }, [loadSquad, loadGameWeek, loadInsights]);
-
-  /**
-   * Refreshes photos/stats from the public API, then recomputes the game week
-   * and projections. No Sorare login involved at any step.
-   */
-  async function refreshStats() {
-    setSyncing(true);
-    setNotice("");
-    try {
-      let guard = 0;
-      for (;;) {
-        const batch = await apiFetch<{ processed: number; remaining: number; total: number; failed: number }>(
-          "/api/enrich",
-          { method: "POST" }
-        );
-        setNotice(`${batch.total - batch.remaining}/${batch.total} joueurs`);
-        if (batch.failed > 0) throw new Error(`${batch.failed} lot(s) en échec — voir le Journal pour le détail.`);
-        if (batch.remaining === 0 || batch.processed === 0) break;
-        if (++guard > 60) break;
-      }
-
-      setNotice("Calcul des projections…");
-      const gw = await apiFetch<{ fixture: string | null; updated: number }>("/api/gameweek", { method: "POST" });
-
-      await refreshAll();
-      await loadLogs();
-      setNotice(`À jour — ${gw.updated} projections pour ${gw.fixture ?? "la game week"}.`);
-    } catch (err) {
-      setError(msg(err));
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   async function runLineupCheck() {
     setCheckingLineups(true);
@@ -597,138 +665,6 @@ export default function Page() {
       setError(msg(err));
     } finally {
       setCheckingLineups(false);
-    }
-  }
-
-  /**
-   * Pulls per-game history so the starting probability can be built from real
-   * compositions instead of appearance counts, which can't tell a substitute
-   * from a starter. Public since PLAYER_FORM moved to `anyPlayer`, so no
-   * Sorare login is needed.
-   *
-   * One API call per player against a 20/min unauthenticated limit, so a large
-   * gallery takes a while — the loop is resumable via its cursor, and stopping
-   * early just means fewer players upgraded, never corrupt data.
-   */
-  async function syncForm() {
-    setSyncingForm(true);
-    setNotice("");
-    try {
-      let cursor = 0;
-      let guard = 0;
-      for (;;) {
-        const batch = await apiFetch<{
-          status: string;
-          detail?: string;
-          processed: number;
-          nextCursor: number | null;
-          total: number;
-        }>("/api/sync/batch", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ cursor }),
-        });
-        if (batch.status === "error") throw new Error(batch.detail ?? "Erreur de synchronisation");
-        setNotice(`Compositions : ${Math.min(cursor + batch.processed, batch.total)}/${batch.total} joueurs`);
-        if (batch.nextCursor == null) break;
-        cursor = batch.nextCursor;
-        if (++guard > 400) break;
-      }
-      // Projections have to be recomputed for the new start data to reach the UI.
-      const gw = await apiFetch<{ fixture: string | null; updated: number }>("/api/gameweek", { method: "POST" });
-      await refreshAll();
-      await loadLogs();
-      setNotice(`Compositions synchronisées — ${gw.updated} projections recalculées.`);
-    } catch (err) {
-      setError(msg(err));
-    } finally {
-      setSyncingForm(false);
-    }
-  }
-
-  /**
-   * Reads what each card actually cost from the public ownership record —
-   * auctions, instant buys, offers, rewards and packs alike, which the
-   * offer-based sync never covered. No Sorare login needed.
-   */
-  async function syncAcquisitions() {
-    setSyncingAcquisitions(true);
-    setNotice("");
-    try {
-      let cursor = 0;
-      let priced = 0;
-      let credits = 0;
-      let guard = 0;
-      for (;;) {
-        const batch = await apiFetch<{
-          processed: number;
-          priced: number;
-          withCredits: number;
-          nextCursor: number | null;
-          total: number;
-        }>("/api/acquisitions", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ cursor }),
-        });
-        priced += batch.priced;
-        credits += batch.withCredits;
-        setNotice(`Prix d'achat : ${Math.min(cursor + batch.processed, batch.total)}/${batch.total} cartes`);
-        if (batch.nextCursor == null) break;
-        cursor = batch.nextCursor;
-        if (++guard > 200) break;
-      }
-      await refreshAll();
-      await loadLogs();
-      setNotice(
-        `${priced} prix d'achat récupérés${credits > 0 ? `, dont ${credits} réglé(s) en crédits` : ""}.`
-      );
-    } catch (err) {
-      setError(msg(err));
-    } finally {
-      setSyncingAcquisitions(false);
-    }
-  }
-
-  /**
-   * Prices every card in the gallery off completed sales.
-   *
-   * Looped rather than one call: a valuation is one un-batchable Sorare
-   * request paced at ~3.2 s, so a full gallery can't fit in a single
-   * serverless invocation. Each pass takes the stalest markets first, so an
-   * interrupted run still leaves the gallery better off than it started.
-   */
-  async function syncValuations() {
-    setSyncingValuations(true);
-    setNotice("");
-    try {
-      let done = 0;
-      let failed = 0;
-      let guard = 0;
-      for (;;) {
-        const batch = await apiFetch<{
-          processed: number;
-          remaining: number;
-          total: number;
-          failed: number;
-        }>("/api/valuations/sync", { method: "POST" });
-        done += batch.processed;
-        failed += batch.failed;
-        setNotice(`Valorisation : ${done} marché(s) sur ${done + batch.remaining}`);
-        if (batch.remaining === 0 || batch.processed === 0) break;
-        if (++guard > 200) break;
-      }
-      await refreshAll();
-      await loadLogs();
-      setNotice(
-        done === 0
-          ? "Valorisations déjà à jour."
-          : `${done} marché(s) valorisé(s)${failed > 0 ? `, ${failed} en échec` : ""}.`
-      );
-    } catch (err) {
-      setError(msg(err));
-    } finally {
-      setSyncingValuations(false);
     }
   }
 
@@ -973,12 +909,18 @@ export default function Page() {
                   onDirection={setDirection}
                   inSeasonOnly={inSeasonOnly}
                   onInSeasonOnly={setInSeasonOnly}
+                  divisions={divisionOptions}
+                  division={division}
+                  onDivision={setDivision}
+                  divisionLoading={divisionLoading}
+                  divisionNote={divisionNote}
                 />
                 <p className="font-mono text-xs text-muted mb-2">
                   {visible.length} carte{visible.length > 1 ? "s" : ""}
+                  {pageCount > 1 && ` · page ${currentPage}/${pageCount}`}
                 </p>
                 <ul className="flex flex-col gap-2">
-                  {visible.map((c) => (
+                  {paged.map((c) => (
                     <PlayerCard
                       key={c.cardSlug}
                       card={c}
@@ -988,6 +930,27 @@ export default function Page() {
                     />
                   ))}
                 </ul>
+                {pageCount > 1 && (
+                  <div className="flex items-center justify-between gap-2 mt-3">
+                    <button
+                      onClick={() => setPage(currentPage - 1)}
+                      disabled={currentPage <= 1}
+                      className="text-xs border border-line rounded-md px-3 py-2 disabled:opacity-40"
+                    >
+                      ← Précédent
+                    </button>
+                    <span className="font-mono text-xs text-muted">
+                      {currentPage} / {pageCount}
+                    </span>
+                    <button
+                      onClick={() => setPage(currentPage + 1)}
+                      disabled={currentPage >= pageCount}
+                      className="text-xs border border-line rounded-md px-3 py-2 disabled:opacity-40"
+                    >
+                      Suivant →
+                    </button>
+                  </div>
+                )}
                 {visible.length === 0 && (
                   <p className="font-mono text-sm text-muted">Aucune carte ne correspond à ce filtre.</p>
                 )}
@@ -1445,82 +1408,47 @@ export default function Page() {
           <section aria-label="Données" className="space-y-3">
             <CsvImport onDone={refreshAll} />
 
-            <button
-              onClick={refreshStats}
-              disabled={syncing}
-              className="w-full border border-line font-bold py-3 rounded-md text-sm disabled:opacity-50"
-            >
-              {syncing ? "Mise à jour…" : "Rafraîchir photos et stats"}
-            </button>
-            <p className="font-mono text-xs text-muted">
-              Récupère photos, clubs, blessures et scores récents depuis l&apos;API publique Sorare. Aucune
-              connexion requise.
-            </p>
+            <SyncAll
+              fixture={fixture}
+              signedIn={Boolean(tokenStatus?.signedIn)}
+              onDone={async (summary) => {
+                await refreshAll();
+                await loadLogs();
+                setNotice(summary);
+              }}
+              onError={(m) => setError(m)}
+            />
 
-            <button
-              onClick={syncAcquisitions}
-              disabled={syncingAcquisitions}
-              className="w-full border border-line font-bold py-3 rounded-md text-sm disabled:opacity-50"
-            >
-              {syncingAcquisitions ? "Analyse…" : "Récupérer mes prix d'achat réels"}
-            </button>
-            <p className="font-mono text-xs text-muted">
-              Lit le registre de propriété public de chaque carte : enchères, achats directs, offres,
-              récompenses et packs — là où la synchro des ventes ne voyait que les ventes directes. Repère
-              aussi les achats réglés en crédits. Aucune connexion requise.
-            </p>
+            {/* Kept apart from the Sorare button on purpose: both of these come
+                from API-Football, so folding them in would make a "synchroniser
+                avec Sorare" run fail on a missing APIFOOTBALL_KEY. */}
+            <div className="pt-2 border-t border-line space-y-3">
+              <h2 className="font-display uppercase text-sm tracking-wide text-muted">Autres sources</h2>
 
-            <button
-              onClick={syncValuations}
-              disabled={syncingValuations}
-              className="w-full border border-line font-bold py-3 rounded-md text-sm disabled:opacity-50"
-            >
-              {syncingValuations ? "Valorisation…" : "Valoriser ma galerie"}
-            </button>
-            <p className="font-mono text-xs text-muted">
-              Calcule ce que vaut réellement chaque carte à partir des ventes conclues, et non d&apos;une
-              annonce ou d&apos;un export figé. In-season et toutes saisons sont deux marchés distincts et
-              sont valorisés séparément. Une carte par marché, une requête par marché : compte quelques
-              minutes sur une grosse galerie sans clé API. Aucune connexion requise.
-            </p>
+              <button
+                onClick={runLineupCheck}
+                disabled={checkingLineups}
+                className="w-full border border-line font-bold py-3 rounded-md text-sm disabled:opacity-50"
+              >
+                {checkingLineups ? "Vérification…" : "Vérifier les compos officielles"}
+              </button>
+              <p className="font-mono text-xs text-muted">
+                Utile seulement ~90 min avant le coup d&apos;envoi. Nécessite APIFOOTBALL_KEY.
+              </p>
 
-            <button
-              onClick={syncForm}
-              disabled={syncingForm}
-              className="w-full border border-line font-bold py-3 rounded-md text-sm disabled:opacity-50"
-            >
-              {syncingForm ? "Synchronisation…" : "Synchroniser les compositions"}
-            </button>
-            <p className="font-mono text-xs text-muted">
-              Récupère la composition de chaque match passé — c&apos;est ce qui permet de distinguer un
-              titulaire d&apos;un remplaçant. Sans ça, la probabilité affichée est un taux de participation
-              (« joue »), pas une titularisation. Aucune connexion requise, mais compte ~1 requête par joueur
-              sur les 20/min publiques : c&apos;est long sur une grosse galerie, et reprenable à tout moment.
-            </p>
-
-            <button
-              onClick={runLineupCheck}
-              disabled={checkingLineups}
-              className="w-full border border-line font-bold py-3 rounded-md text-sm disabled:opacity-50"
-            >
-              {checkingLineups ? "Vérification…" : "Vérifier les compos officielles"}
-            </button>
-            <p className="font-mono text-xs text-muted">
-              Utile seulement ~90 min avant le coup d&apos;envoi. Nécessite APIFOOTBALL_KEY.
-            </p>
-
-            <button
-              onClick={syncFriendlies}
-              disabled={syncingFriendlies}
-              className="w-full border border-line font-bold py-3 rounded-md text-sm disabled:opacity-50"
-            >
-              {syncingFriendlies ? "Récupération…" : "Récupérer les matchs de préparation"}
-            </button>
-            <p className="font-mono text-xs text-muted">
-              Minutes, buts et passes de tes joueurs en amicaux de club — l&apos;API Sorare ne les couvre pas,
-              ceux-ci viennent d&apos;API-Football (nécessite APIFOOTBALL_KEY, ~1 requête par club puis 1 par
-              match sur les 100/jour gratuites). À lancer une fois par semaine pendant la préparation.
-            </p>
+              <button
+                onClick={syncFriendlies}
+                disabled={syncingFriendlies}
+                className="w-full border border-line font-bold py-3 rounded-md text-sm disabled:opacity-50"
+              >
+                {syncingFriendlies ? "Récupération…" : "Récupérer les matchs de préparation"}
+              </button>
+              <p className="font-mono text-xs text-muted">
+                Minutes, buts et passes de tes joueurs en amicaux de club — l&apos;API Sorare ne les couvre
+                pas, ceux-ci viennent d&apos;API-Football (nécessite APIFOOTBALL_KEY, ~1 requête par club puis
+                1 par match sur les 100/jour gratuites). À lancer une fois par semaine pendant la préparation.
+              </p>
+            </div>
 
             {notice && <p className="font-mono text-xs text-ok">{notice}</p>}
 

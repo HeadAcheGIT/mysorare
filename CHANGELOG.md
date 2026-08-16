@@ -3,6 +3,53 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-20 (soir) — Une seule synchro, et une galerie navigable
+
+### Neuf boutons devenus un
+
+Garder l'app à jour demandait de se souvenir de neuf actions réparties sur
+trois écrans — cinq dans Données, une dans le tableau des divisions, une dans
+le bilan de saison — sans que rien n'indique laquelle comptait ni dans quel
+ordre.
+
+`lib/syncSteps.ts` en fait une liste ordonnée. L'ordre n'est pas cosmétique :
+`players` passe en premier parce que tout le reste se joint sur les lignes
+Player, et les étapes publiques sont groupées avant celles qui exigent une
+session, pour qu'une synchro déconnectée termine toute la partie utile avant de
+commencer à sauter des étapes.
+
+**Une étape en échec n'arrête pas la suite.** Elles sont indépendantes :
+s'arrêter à la 2e sur 9 parce qu'une session a expiré jetterait huit
+synchronisations qui auraient marché. Chacune reste lançable seule — quand une
+échoue, c'est celle-là qu'on relance, pas les vingt minutes.
+
+Les étapes ignorées sont **nommées**, pas comptées : « 3 ignorées » laisse
+deviner quelle moitié de l'app est périmée.
+
+Les amicaux et la vérification des compos officielles restent à part, sous
+« Autres sources » : ils viennent d'API-Football, et les inclure ferait échouer
+une synchro *Sorare* sur une `APIFOOTBALL_KEY` absente.
+
+### Galerie : filtre par division et pagination
+
+Le filtre s'appuie sur le vivier réel de Sorare (`so5Leaderboard.myBench`)
+plutôt que sur des règles réimplémentées : ce vivier tient déjà compte de la
+rareté, de la saisonnalité et des cartes engagées ailleurs — impossible à
+reproduire localement, et se tromper produirait une liste en désaccord avec
+Sorare précisément quand ça compte. Il indique aussi combien de cartes sont
+déjà engagées ailleurs.
+
+En cas d'échec, la galerie entière réapparaît plutôt qu'une liste vide : « rien
+d'éligible » serait un mensonge.
+
+Pagination à 48 cartes. La page est **bornée** au nombre de pages plutôt que
+remise à zéro après coup, pour qu'un filtre qui raccourcit la liste ne laisse
+jamais l'écran sur une page inexistante.
+
+Au passage : le tri « Valeur » utilisait encore le floor CSV, donc classait les
+cartes in-season selon ce que vaut une saison passée. Il suit maintenant
+`cardValue` comme le reste.
+
 ## 2026-08-20 — Le CTA prix montrait le prix d'une carte injouable
 
 Remonté depuis la prod : « le CTA prix est KO ». Deux causes distinctes,

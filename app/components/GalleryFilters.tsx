@@ -5,6 +5,9 @@ import SortControl, { type SortDirection } from "./SortControl";
 export type SortKey = "score" | "name" | "price" | "form" | "titu" | "u23";
 export type { SortDirection };
 
+/** One of the manager's real divisions, for the eligibility filter. */
+export type DivisionOption = { slug: string; label: string };
+
 const POSITIONS = [
   ["", "Tous"],
   ["Goalkeeper", "GK"],
@@ -48,6 +51,11 @@ export default function GalleryFilters({
   onDirection,
   inSeasonOnly,
   onInSeasonOnly,
+  divisions,
+  division,
+  onDivision,
+  divisionLoading,
+  divisionNote,
 }: {
   search: string;
   onSearch: (v: string) => void;
@@ -61,6 +69,11 @@ export default function GalleryFilters({
   onDirection: (d: SortDirection) => void;
   inSeasonOnly: boolean;
   onInSeasonOnly: (v: boolean) => void;
+  divisions: DivisionOption[];
+  division: string;
+  onDivision: (v: string) => void;
+  divisionLoading: boolean;
+  divisionNote: string | null;
 }) {
   return (
     <div className="space-y-2 mb-4">
@@ -71,6 +84,32 @@ export default function GalleryFilters({
         aria-label="Chercher un joueur ou un club"
         className="w-full bg-ink border border-line rounded-md px-3 py-2 text-sm"
       />
+
+      {/* Eligibility is Sorare's own answer, not a rule we re-derive: a
+          division's bench already accounts for rarity, season and cards
+          committed elsewhere, which no local filter could reproduce. */}
+      {divisions.length > 0 && (
+        <div>
+          <select
+            value={division}
+            onChange={(e) => onDivision(e.target.value)}
+            aria-label="Filtrer par division d'éligibilité"
+            className="w-full bg-ink border border-line rounded-md px-2 py-1.5 text-xs"
+          >
+            <option value="">Toutes mes cartes</option>
+            {divisions.map((d) => (
+              <option key={d.slug} value={d.slug}>
+                Éligibles — {d.label}
+              </option>
+            ))}
+          </select>
+          {(divisionLoading || divisionNote) && (
+            <p className="mt-1 font-mono text-[10px] text-muted">
+              {divisionLoading ? "Lecture du vivier Sorare…" : divisionNote}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-1.5" role="group" aria-label="Filtrer par poste">
         {POSITIONS.map(([value, label]) => (
