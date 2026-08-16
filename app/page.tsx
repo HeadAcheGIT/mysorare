@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch, ApiFetchError } from "@/lib/apiFetch";
 import { POSITION_SHORT, PRIMARY_RARITY, cardValue, compareNullable, u23SortValue, type SquadCard, type SquadResponse } from "@/lib/types";
+import { matchesSearch, searchTerms } from "@/lib/gallerySearch";
 import PlayerCard from "./components/PlayerCard";
 import AlertBadges, { type PlayerAlert } from "./components/AlertBadges";
 import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, HistoryIcon, DataIcon } from "./components/NavIcons";
@@ -504,14 +505,15 @@ export default function Page() {
   }, [tab, fixture, loadLogs, loadTokenStatus, loadWatchlist, loadSavedLineups, loadSales]);
 
   const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    // Folded once per query rather than per card: accents and case are
+    // normalised, and every word must match somewhere (see lib/gallerySearch).
+    const terms = searchTerms(search);
     const list = squad.filter((c) => {
       if (position && c.position !== position) return false;
       if (rarity && c.rarity !== rarity) return false;
       if (inSeasonOnly && !c.inSeason) return false;
       if (eligibleCards && !eligibleCards.has(c.cardSlug)) return false;
-      if (!q) return true;
-      return c.name.toLowerCase().includes(q) || (c.club ?? "").toLowerCase().includes(q);
+      return matchesSearch(c, terms);
     });
 
     const score = (c: SquadCard) => c.expected ?? c.sorareProjection ?? c.l10;
@@ -529,11 +531,20 @@ export default function Page() {
       if (sort === "form") return compareNullable(formAvg(a), formAvg(b), direction);
       if (sort === "titu") return compareNullable(a.pStart, b.pStart, direction);
       if (sort === "u23") return compareNullable(u23SortValue(a.birthDate), u23SortValue(b.birthDate), direction);
+      // Most recently acquired first. Cards whose acquisition was never synced
+      // have no date and sort last via compareNullable, rather than pretending
+      // to be the oldest.
+      if (sort === "recent") {
+        const at = (c: SquadCard) => (c.acquiredAt ? Date.parse(c.acquiredAt) : null);
+        return compareNullable(at(a), at(b), direction);
+      }
       return compareNullable(score(a), score(b), direction);
     });
   }, [squad, search, position, rarity, inSeasonOnly, eligibleCards, sort, direction]);
 
-  const PAGE_SIZE = 48;
+  // Ten per page: the cards now carry the next match and the value, so a page
+  // is meant to be read without scrolling rather than skimmed.
+  const PAGE_SIZE = 10;
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   // Clamped rather than reset in an effect: a filter change that shortens the
   // list must never leave the view on a page that no longer exists.

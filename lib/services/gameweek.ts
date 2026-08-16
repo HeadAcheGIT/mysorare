@@ -23,6 +23,8 @@ export async function opponentsForFixture(fixtureSlug: string): Promise<Map<stri
     so5: {
       so5Fixture: {
         games: {
+          id: string;
+          date: string | null;
           homeTeam: { slug: string; domesticLeagueRanking: number | null } | null;
           awayTeam: { slug: string; domesticLeagueRanking: number | null } | null;
         }[];
@@ -30,15 +32,48 @@ export async function opponentsForFixture(fixtureSlug: string): Promise<Map<stri
     };
   }>(FIXTURE_GAMES_PUBLIC, { slug: fixtureSlug });
 
+  const games = data?.so5?.so5Fixture?.games ?? [];
+
   const out = new Map<string, Opponent>();
-  for (const g of data?.so5?.so5Fixture?.games ?? []) {
+  for (const g of games) {
     const home = g.homeTeam;
     const away = g.awayTeam;
     if (!home?.slug || !away?.slug) continue;
     if (!out.has(home.slug)) out.set(home.slug, { opponentRank: away.domesticLeagueRanking, isHome: true });
     if (!out.has(away.slug)) out.set(away.slug, { opponentRank: home.domesticLeagueRanking, isHome: false });
   }
+
+  // Kept rather than discarded: the response already carries who plays whom and
+  // when, and the gallery needs exactly that to show a player's next match. A
+  // projection without the match it refers to is a number with no context.
+  // Failing here must not lose the projection, which is what this call is for.
+  await persistGames(fixtureSlug, games).catch(() => {});
+
   return out;
+}
+
+async function persistGames(
+  fixtureSlug: string,
+  games: {
+    id: string;
+    date: string | null;
+    homeTeam: { slug: string; domesticLeagueRanking: number | null } | null;
+    awayTeam: { slug: string; domesticLeagueRanking: number | null } | null;
+  }[]
+): Promise<void> {
+  for (const g of games) {
+    if (!g.id || !g.homeTeam?.slug || !g.awayTeam?.slug) continue;
+    const row = {
+      fixtureSlug,
+      date: parseDate(g.date),
+      homeClubSlug: g.homeTeam.slug,
+      awayClubSlug: g.awayTeam.slug,
+      homeRanking: g.homeTeam.domesticLeagueRanking,
+      awayRanking: g.awayTeam.domesticLeagueRanking,
+      syncedAt: new Date(),
+    };
+    await prisma.game.upsert({ where: { id: g.id }, create: { id: g.id, ...row }, update: row });
+  }
 }
 
 /**

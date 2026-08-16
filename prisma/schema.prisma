@@ -554,6 +554,33 @@ model WatchlistItem {
   @@index([groupId])
 }
 
+/// One match of a game week, so the gallery can say who a player actually
+/// faces and when.
+///
+/// The data was already being fetched — `opponentsForFixture` reads exactly
+/// these fields to weight a projection by opponent strength — and then threw
+/// away everything but the ranking. Persisting it costs no extra Sorare
+/// request; without it, a card could show a starting probability but not the
+/// match that probability is about.
+model Game {
+  /// Sorare's own game id.
+  id          String    @id
+  fixtureSlug String
+  date        DateTime?
+
+  homeClubSlug String
+  awayClubSlug String
+  /// Domestic league position at sync time, the basis for opponent difficulty.
+  homeRanking Int?
+  awayRanking Int?
+
+  syncedAt DateTime @default(now())
+
+  @@index([fixtureSlug])
+  @@index([fixtureSlug, homeClubSlug])
+  @@index([fixtureSlug, awayClubSlug])
+}
+
 /// What cards of a given player, rarity and season eligibility actually fetch
 /// on the market, computed from completed sales by `lib/valuation.ts`.
 ///

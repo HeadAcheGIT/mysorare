@@ -1,5 +1,5 @@
 import { prisma } from "../prisma";
-import type { SquadCard } from "../types";
+import type { NextGame, SquadCard } from "../types";
 
 export type { SquadCard };
 
@@ -37,7 +37,8 @@ export async function getSquadView(
 ): Promise<{ fixture: string | null; cards: SquadCard[] }> {
   const resolvedFixture = fixture ?? (await currentFixture());
 
-  const [cards, players, clubs, projections, overrides, lastAppearances, valuations] = await Promise.all([
+  const [cards, players, clubs, projections, overrides, lastAppearances, valuations, games] =
+    await Promise.all([
     prisma.card.findMany(rarity ? { where: { rarity } } : undefined),
     prisma.player.findMany(),
     prisma.club.findMany(),
@@ -63,6 +64,11 @@ export async function getSquadView(
     // than computed here: one un-batchable Sorare request per market would put
     // minutes on a gallery load. Refreshed by /api/valuations/sync.
     prisma.playerValuation.findMany(),
+    // This game week's matches, so a card can show who its player faces rather
+    // than only a probability about an unnamed opponent.
+    resolvedFixture
+      ? prisma.game.findMany({ where: { fixtureSlug: resolvedFixture }, orderBy: { date: "asc" } })
+      : Promise.resolve([]),
   ]);
 
   const playerMap = new Map(players.map((p) => [p.slug, p]));
@@ -76,6 +82,34 @@ export async function getSquadView(
   const valuationMap = new Map(
     valuations.map((v) => [`${v.playerSlug}:${v.rarity}:${v.inSeason}`, v])
   );
+
+  /**
+   * Each club's next match this game week.
+   *
+   * Games arrive ordered by date, so the first one seen for a club is the
+   * earliest — which is the one a manager is deciding about. A club can play
+   * twice in a week; the later match is deliberately not shown here rather
+   * than crammed into a one-line summary.
+   */
+  const nextGameByClub = new Map<string, NextGame>();
+  for (const g of games) {
+    const opponentOf = (clubSlug: string, opponentSlug: string, rank: number | null, isHome: boolean) => {
+      if (nextGameByClub.has(clubSlug)) return;
+      const club = clubMap.get(opponentSlug);
+      nextGameByClub.set(clubSlug, {
+        date: g.date?.toISOString() ?? null,
+        opponentSlug,
+        // Falls back to the slug: an unenriched opponent should still be named,
+        // not shown as an empty gap.
+        opponentName: club?.name ?? opponentSlug,
+        opponentPicture: club?.pictureUrl ?? null,
+        isHome,
+        opponentRank: rank,
+      });
+    };
+    opponentOf(g.homeClubSlug, g.awayClubSlug, g.awayRanking, true);
+    opponentOf(g.awayClubSlug, g.homeClubSlug, g.homeRanking, false);
+  }
 
   const out: SquadCard[] = cards
     // Annotated so the shape is checked against SquadCard here rather than
@@ -135,7 +169,9 @@ export async function getSquadView(
         boughtPrice: c.boughtPrice,
         boughtPriceApprox: c.boughtPriceApprox,
         acquiredVia: c.acquiredVia,
+        acquiredAt: c.acquiredAt?.toISOString() ?? null,
         paidWithCredits: c.paidWithCredits,
+        nextGame: (p.clubSlug ? nextGameByClub.get(p.clubSlug) : null) ?? null,
         // Mapped field by field rather than spread: the row carries the
         // composite key and computedAt too, which aren't part of a Valuation.
         valuation: val

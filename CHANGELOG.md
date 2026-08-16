@@ -3,6 +3,48 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-21 — La galerie lisible sans cliquer
+
+### Le prochain match était déjà dans la réponse, et jeté
+
+`opponentsForFixture` interrogeait déjà l'API pour la date, l'adversaire et son
+classement — puis ne gardait que le rang, pour pondérer une projection. Une
+probabilité de titularisation s'affichait donc sans le match dont elle parle :
+70 % contre qui, et quand ?
+
+Nouveau modèle `Game`, alimenté par cette même requête : **coût API nul**.
+La brique joueur affiche maintenant `sam. 23/08 20:45 · reçoit Lyon (3ᵉ)`, ou
+« Pas de match cette game week », qui est une information en soi.
+
+Au passage, la valeur ne s'affichait **que** si la probabilité manquait — un
+joueur alignable ne montrait donc jamais ce qu'il vaut. Les deux sont là
+désormais.
+
+### Tri « Récent »
+
+Sur `Card.acquiredAt`, lu du registre de propriété. Les cartes jamais
+synchronisées n'ont pas de date et se classent en dernier plutôt que de se
+faire passer pour les plus anciennes.
+
+### Un vrai moteur de recherche
+
+L'ancien filtre était `name.includes(q) || club.includes(q)` sur les chaînes
+brutes. Il échouait sur les deux choses qu'on tape tous les jours :
+
+- **les accents** — « mbappe » ne trouvait jamais « Mbappé » ;
+- **plusieurs mots** — « lopez ligue » ne trouvait rien, aucun champ ne
+  contenant les deux.
+
+`lib/gallerySearch.ts` replie accents et casse, découpe la requête en mots et
+exige que **chacun** apparaisse quelque part : nom, club, championnat, poste
+(en français — « milieu », « attaquant »), rareté, saison, in-season. Les mots
+sont combinés en ET, puisqu'un mot ajouté sert toujours à réduire.
+
+### Pagination à 10
+
+Les briques portent désormais le match et la valeur : une page est faite pour
+être lue d'un coup d'œil, pas parcourue.
+
 ## 2026-08-20 (soir) — Une seule synchro, et une galerie navigable
 
 ### Neuf boutons devenus un

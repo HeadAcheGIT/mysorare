@@ -2,7 +2,7 @@
 
 import SortControl, { type SortDirection } from "./SortControl";
 
-export type SortKey = "score" | "name" | "price" | "form" | "titu" | "u23";
+export type SortKey = "score" | "name" | "price" | "form" | "titu" | "u23" | "recent";
 export type { SortDirection };
 
 /** One of the manager's real divisions, for the eligibility filter. */
@@ -26,6 +26,7 @@ const SORTS: [SortKey, string][] = [
   ["price", "Valeur"],
   ["name", "Nom"],
   ["u23", "U23"],
+  ["recent", "Récent"],
 ];
 
 /** Sensible default direction per key, applied when the key itself changes. */
@@ -36,6 +37,7 @@ export const DEFAULT_DIRECTION: Record<SortKey, SortDirection> = {
   price: "desc",
   name: "asc",
   u23: "desc", // most time left as U23 first
+  recent: "desc", // newest acquisition first
 };
 
 export default function GalleryFilters({
@@ -80,8 +82,8 @@ export default function GalleryFilters({
       <input
         value={search}
         onChange={(e) => onSearch(e.target.value)}
-        placeholder="Chercher un joueur ou un club"
-        aria-label="Chercher un joueur ou un club"
+        placeholder="Nom, club, championnat, poste, saison…"
+        aria-label="Chercher dans la galerie"
         className="w-full bg-ink border border-line rounded-md px-3 py-2 text-sm"
       />
 

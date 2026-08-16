@@ -91,6 +91,30 @@ export interface SquadCard {
    * Null until the valuation sync has covered this market.
    */
   valuation?: Valuation | null;
+  /**
+   * When the card entered the gallery, from the blockchain ownership record —
+   * what "récent" sorts on. Null for cards whose acquisition was never synced.
+   */
+  acquiredAt?: string | null;
+  /**
+   * The match this game week's projection is actually about.
+   *
+   * A starting probability with no visible fixture is a number without its
+   * question: 70 % against whom, and when. Null when the player's club isn't
+   * playing this game week, which is itself worth seeing.
+   */
+  nextGame?: NextGame | null;
+}
+
+export interface NextGame {
+  /** ISO kick-off, when Sorare gave one. */
+  date: string | null;
+  opponentSlug: string;
+  opponentName: string;
+  opponentPicture: string | null;
+  isHome: boolean;
+  /** Opponent's domestic league position — the "is this a hard match" signal. */
+  opponentRank: number | null;
 }
 
 /**
