@@ -554,6 +554,57 @@ model WatchlistItem {
   @@index([groupId])
 }
 
+/// A line of the Sorare accounting export — the real cash ledger.
+///
+/// Imported from the CSV rather than synced: `currentUser.accountEntries` does
+/// expose the ledger over the API, but only as `id / date / entryType /
+/// amounts / account` — with **no card reference and no operation type**. The
+/// CSV's `description` column carries the card slug, and that is the only
+/// thing that makes per-card attribution possible at all.
+///
+/// Why it matters: a card's price and the cash that left the wallet are not the
+/// same number. Maxime Lopez cost 4,87 € but the ledger shows only 2,44 €
+/// leaving the ETH wallet — the rest was settled in credits. The gap *is* the
+/// credit portion, and it is the difference between apparent ROI and real ROI.
+model AccountingEntry {
+  /// Deterministic hash of the row's own fields. The export carries no id, so
+  /// this is what makes re-importing an overlapping export idempotent instead
+  /// of doubling every movement.
+  id String @id
+
+  date          DateTime
+  /// payment, reward, cancelled_payment, payment_fee, deposit, withdrawal…
+  entryType     String
+  /// Offer, Bid, So5Reward, MonetaryReward, EnglishAuction, PrimaryOffer…
+  operationType String?
+  /// Card slug when the row is about a card; Sorare puts it in `description`.
+  cardSlug      String?
+  /// Raw description, kept for the rows that aren't about a card (e.g.
+  /// "global_all_star_rare rank 2337").
+  description   String?
+
+  currency String?
+  /// The raw signed amount in `currency`, exactly as exported.
+  amount   Float
+  /// The movement in EUR: the amount itself for EUR rows, else the export's
+  /// own fiat equivalent at the time — which is the right basis for a cost,
+  /// not today's rate.
+  eurAmount Float?
+
+  /// True when the row moved the Sorare wallet (the export gives a running
+  /// balance). False for external card charges and refunds, where the amount
+  /// is unsigned and the direction comes from `entryType` instead.
+  isWallet Boolean
+  /// +1 money in, -1 money out. Resolved at import so nothing downstream has
+  /// to re-derive a convention that differs between the two row families.
+  direction Int
+
+  importedAt DateTime @default(now())
+
+  @@index([cardSlug])
+  @@index([date])
+}
+
 /// One match of a game week, so the gallery can say who a player actually
 /// faces and when.
 ///

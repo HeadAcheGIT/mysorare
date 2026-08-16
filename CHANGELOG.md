@@ -3,6 +3,60 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-21 (soir) — Le prix d'achat, décomposé en cash et crédits
+
+### Pourquoi un import et pas une synchro
+
+Le grand livre **est** accessible par l'API : `currentUser.accountEntries` est
+une vraie connexion. Mais un `UserAccountEntry` n'expose que
+`id / date / entryType / amounts / account` — **aucune référence de carte, ni
+type d'opération**. Rien dedans n'est donc attribuable à une carte.
+
+La colonne `description` du CSV, elle, contient le slug. C'est ce qui rend
+l'attribution possible, et c'est la seule raison de passer par un fichier.
+
+### La convention de signe, mesurée et non supposée
+
+Contrôle sur l'export réel : `solde_avant + montant == solde_après`,
+**827 fois sur 827**. Mais il y a deux familles de lignes :
+
+| Famille | Reconnaissance | Direction |
+|---|---|---|
+| Portefeuille | solde numérique | **le signe** |
+| Hors-portefeuille | solde `-` | **toujours positif** → donnée par `entry_type` |
+
+Lire le signe au pied de la lettre sur les 182 lignes hors-portefeuille
+inverserait 182 mouvements, dont les 15 achats aux enchères de 2021. Les 156
+lignes `Bid` hors-portefeuille sont exactement les 156 `cancelled_payment` :
+des remboursements d'enchères perdues.
+
+### Le résultat
+
+Sur l'export complet : 1309 mouvements lus, 93 sans montant (cartes gagnées,
+aucun cash déplacé), 1206 attribuables à 812 cartes distinctes, **zéro
+collision d'identifiant** — réimporter le même fichier n'ajoute rien.
+
+Et le cas qui a lancé tout ça :
+
+    maxime-lopez-2026-limited-33
+    prix réel        4,87 €   (registre de propriété)
+    sorti du wallet  2,44 €   (grand livre)
+    → crédits        2,43 €   soit 50 %
+
+Le prix d'une carte et le cash qui a quitté le portefeuille sont deux nombres
+différents. L'écart, invisible dans chaque source prise seule, **est** la part
+réglée en crédits.
+
+Les remboursements sont déduits des achats plutôt que listés à part : une carte
+gagnée à la cinquième enchère génère cinq débits et quatre remboursements, seul
+le net a été payé.
+
+### Fraîcheur affichée
+
+Puisque les données ne valent que le dernier export, l'écran dit jusqu'à quand
+le grand livre va et depuis combien de jours — et passe en alerte au-delà de
+trois semaines, plutôt que de laisser un ROI vieilli passer pour actuel.
+
 ## 2026-08-21 — La galerie lisible sans cliquer
 
 ### Le prochain match était déjà dans la réponse, et jeté

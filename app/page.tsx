@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { apiFetch, ApiFetchError } from "@/lib/apiFetch";
 import { POSITION_SHORT, PRIMARY_RARITY, cardValue, compareNullable, u23SortValue, type SquadCard, type SquadResponse } from "@/lib/types";
 import { matchesSearch, searchTerms } from "@/lib/gallerySearch";
+import type { PriceComposition } from "@/lib/accountingRoi";
 import PlayerCard from "./components/PlayerCard";
 import AlertBadges, { type PlayerAlert } from "./components/AlertBadges";
 import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, HistoryIcon, DataIcon } from "./components/NavIcons";
@@ -24,6 +25,7 @@ import InSeasonAdvisor from "./components/InSeasonAdvisor";
 import SeasonReport from "./components/SeasonReport";
 import AuctionWatch from "./components/AuctionWatch";
 import SyncAll from "./components/SyncAll";
+import AccountingImport from "./components/AccountingImport";
 
 type SavedLineup = {
   id: number;
@@ -206,11 +208,26 @@ export default function Page() {
   };
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [salesLoading, setSalesLoading] = useState(false);
+  /** Wallet/credit split per card slug, empty until an accounting export is imported. */
+  const [compositions, setCompositions] = useState<Record<string, PriceComposition>>({});
   const [salesSyncing, setSalesSyncing] = useState(false);
   const loadSales = useCallback(async () => {
     setSalesLoading(true);
     try {
-      setSales(await apiFetch<SaleRow[]>("/api/sales"));
+      const rows = await apiFetch<SaleRow[]>("/api/sales");
+      setSales(rows);
+
+      // How each purchase was actually settled. Fetched after the rows rather
+      // than joined server-side: the ledger is optional, and the history has
+      // to render fully whether or not an export has ever been imported.
+      const slugs = rows.map((r) => r.cardSlug).filter(Boolean);
+      if (slugs.length) {
+        setCompositions(
+          await apiFetch<Record<string, PriceComposition>>(
+            `/api/accounting?slugs=${encodeURIComponent(slugs.join(","))}`
+          ).catch(() => ({}))
+        );
+      }
     } catch (err) {
       setError(msg(err));
     } finally {
@@ -867,6 +884,8 @@ export default function Page() {
                   </p>
                 </div>
                 <CsvImport onDone={refreshAll} />
+
+            <AccountingImport onImported={loadSales} />
               </div>
             ) : (
               <>
@@ -903,6 +922,8 @@ export default function Page() {
                   </p>
                 </div>
                 <CsvImport onDone={refreshAll} />
+
+            <AccountingImport onImported={loadSales} />
               </div>
             ) : (
               <>
@@ -1392,6 +1413,32 @@ export default function Page() {
                       {s.currentFloor != null && <span>Floor actuel {s.currentFloor.toFixed(2)} €</span>}
                     </div>
 
+                    {/* What the purchase was actually made of. The price and
+                        the cash that left the wallet are different numbers
+                        whenever credits were involved, and only the second one
+                        is real money out. */}
+                    {compositions[s.cardSlug] && (
+                      <p className="mt-1 font-mono text-[11px]">
+                        {compositions[s.cardSlug].credit > 0 ? (
+                          <>
+                            <span className="text-muted">dont </span>
+                            <span className="text-fg">
+                              {compositions[s.cardSlug].wallet.toFixed(2)} € portefeuille
+                            </span>
+                            <span className="text-muted"> + </span>
+                            <span className="text-limited">
+                              {compositions[s.cardSlug].credit.toFixed(2)} € crédits
+                            </span>
+                            <span className="text-muted"> ({compositions[s.cardSlug].creditPct} %)</span>
+                          </>
+                        ) : (
+                          <span className="text-muted">
+                            payé intégralement du portefeuille ({compositions[s.cardSlug].wallet.toFixed(2)} €)
+                          </span>
+                        )}
+                      </p>
+                    )}
+
                     {profit != null && (
                       <p className={`mt-1 text-xs font-mono ${profit >= 0 ? "text-ok" : "text-warn"}`}>
                         {profit >= 0 ? "+" : ""}
@@ -1418,6 +1465,8 @@ export default function Page() {
         {tab === "settings" && (
           <section aria-label="Données" className="space-y-3">
             <CsvImport onDone={refreshAll} />
+
+            <AccountingImport onImported={loadSales} />
 
             <SyncAll
               fixture={fixture}
