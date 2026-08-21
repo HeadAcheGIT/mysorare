@@ -28,6 +28,7 @@ import AuctionWatch from "./components/AuctionWatch";
 import SyncAll from "./components/SyncAll";
 import ProjectionAccuracy from "./components/ProjectionAccuracy";
 import Debrief from "./components/Debrief";
+import DivisionRoi from "./components/DivisionRoi";
 import AccountingImport from "./components/AccountingImport";
 
 type SavedLineup = {
@@ -1041,6 +1042,7 @@ export default function Page() {
                 just made. */}
             <div className="mt-6 pt-4 border-t border-line space-y-6">
               <Debrief fixture={fixture} />
+              <DivisionRoi />
               <ProjectionAccuracy />
             </div>
 

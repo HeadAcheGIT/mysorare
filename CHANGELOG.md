@@ -3,6 +3,37 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-21 (nuit) — Rendement par division : où l'argent rentre vraiment
+
+« Quelle division a la plus grosse dotation » est la mauvaise question. Une
+dotation qu'il faut 400 € de cartes pour disputer peut rapporter moins, par
+euro engagé, qu'une plus modeste qu'on joue avec 40 €.
+
+Le rendement croise trois choses déjà en base : ce que chaque entrée a payé
+(`SeasonReward`), les cartes réellement alignées pour elle (`AlignedLineup`) et
+ce qu'elles valent (`cardValue`, la même source que partout ailleurs). Aucune
+requête Sorare.
+
+### Rendement, pas marge
+
+Le capital n'est pas dépensé : tu gardes les cartes. C'est donc un rendement
+sur capital immobilisé, et l'écran le formule ainsi plutôt que de laisser lire
+un « +12 % » comme un bénéfice.
+
+### Deux garde-fous contre un chiffre flatteur
+
+- Une compo **valorisée en partie seulement** compte comme inconnue, pas comme
+  un capital plus faible : sous-estimer le dénominateur gonflerait le
+  rendement.
+- Les entrées non valorisées sont exclues **des deux côtés** du ratio — diviser
+  toutes les récompenses par un capital partiel produirait le même biais.
+
+Les cartes gagnées sont comptées à part : leur valeur n'entre pas dans le
+pourcentage, faute de savoir laquelle a été reçue.
+
+Enfin, aucun verdict en dessous de trois entrées : un rendement calculé sur une
+game week ne mesure qu'un classement isolé.
+
 ## 2026-08-21 (nuit) — Débrief : ce que la compo a coûté
 
 Un total ne dit rien tout seul. 210 points n'est ni bon ni mauvais ; 210 quand
