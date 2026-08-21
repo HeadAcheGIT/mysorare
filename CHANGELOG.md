@@ -3,6 +3,49 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-21 (nuit) — La calibration existait, rien ne l'affichait
+
+En cherchant des améliorations, `grep` sur tout `app/` : **aucune** occurrence
+de `aligned`, `accuracy`, `hitRate` ou `brier`. `summarizeAccuracy` note pourtant
+les probabilités contre les titularisations réellement observées, notre modèle
+*contre* celui de Sorare, et `/api/lineups/aligned` l'expose. Rien ne l'appelait.
+
+Pire : la synchro « Compos déjà alignées » tournait à chaque passage pour
+remplir une table que personne ne lisait.
+
+C'est le même schéma que `Projection.note` corrigé plus tôt — calculé, jamais
+rendu. Et c'était le plus grave : sans ce chiffre, **rien dans l'app n'est
+falsifiable**. Chaque projection et chaque compo recommandée repose sur
+p(titulaire), sans aucun moyen de savoir si ça vaut quelque chose.
+
+### Cumulé, pas par game week
+
+La route ne notait qu'une game week à la fois — cinq cartes, où une seule
+rotation surprise déplace le taux de 20 points. `overallAccuracy()` note tout
+l'historique en quatre requêtes (plutôt qu'une boucle à cinq allers-retours par
+game week), avec le détail par game week pour qu'une dérive reste visible au
+lieu d'être moyennée.
+
+### Les deux modèles côte à côte
+
+« 78 % de réussite » seul ne veut rien dire ; « 78 % contre 81 % pour Sorare »
+dit lequel suivre quand les deux divergent. Le score de Brier accompagne le
+taux parce qu'il sanctionne la confiance mal placée : annoncer 95 % pour un
+joueur laissé sur le banc coûte bien plus cher qu'annoncer 60 %.
+
+### Correction d'une fausse piste
+
+Lecture d'`optimizer.ts` isolé : le champ `bonus` y est déclaré, rempli, et
+l'objectif est `score: c.expected` — donc le bonus de carte serait ignoré. Faux.
+`computeForm` fait `expected *= 1 + cardBonus` (projections.ts:138) : le bonus
+est appliqué en amont, dans la projection. L'ajouter au solveur l'aurait compté
+deux fois.
+
+Zone d'ombre restante, non corrigée faute de vérification : `toCandidates`
+retombe sur `sorareProjected` quand notre projection manque, et rien ne dit si
+le `projectedScore` de Sorare inclut le bonus de la carte. Si non, les candidats
+sont comparés sur deux échelles différentes.
+
 ## 2026-08-21 (nuit) — La décomposition remonte jusqu'à la fiche joueur
 
 L'historique montrait déjà la part cash et la part crédits d'un achat, mais

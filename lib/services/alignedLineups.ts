@@ -245,3 +245,107 @@ function round(v: number, dp = 3) {
   const m = 10 ** dp;
   return Math.round(v * m) / m;
 }
+
+export interface FixtureAccuracy {
+  fixtureSlug: string;
+  startDate: string | null;
+  graded: number;
+  ours: SourceAccuracy;
+  sorare: SourceAccuracy;
+}
+
+export interface OverallAccuracy {
+  ours: SourceAccuracy;
+  sorare: SourceAccuracy;
+  /** Game weeks that contributed at least one graded row. */
+  fixtures: number;
+  /** Newest first, so a drift in either model is visible rather than averaged away. */
+  perFixture: FixtureAccuracy[];
+}
+
+/**
+ * Grades every aligned line-up ever synced, not just one game week.
+ *
+ * A single game week is far too small to say whether a probability model is any
+ * good — five cards, and one surprise rotation swings the hit rate by 20 points.
+ * The whole point of a calibration figure is that it accumulates.
+ *
+ * Four queries rather than a loop over `alignedLineupComparison`: that would be
+ * five round trips per game week, and this runs on every visit to the screen.
+ */
+export async function overallAccuracy(): Promise<OverallAccuracy> {
+  const aligned = await prisma.alignedLineup.findMany({
+    select: { fixtureSlug: true, playerSlug: true },
+  });
+  if (!aligned.length) {
+    const none: SourceAccuracy = { graded: 0, hits: 0, hitRate: null, brierScore: null };
+    return { ours: none, sorare: none, fixtures: 0, perFixture: [] };
+  }
+
+  const fixtureSlugs = [...new Set(aligned.map((a) => a.fixtureSlug))];
+  const playerSlugs = [...new Set(aligned.map((a) => a.playerSlug))];
+
+  const [projections, fixtures, appearances] = await Promise.all([
+    prisma.projection.findMany({
+      where: { fixtureSlug: { in: fixtureSlugs }, playerSlug: { in: playerSlugs } },
+      select: { fixtureSlug: true, playerSlug: true, pStart: true, sorareStarterOdds: true },
+    }),
+    prisma.fixture.findMany({
+      where: { slug: { in: fixtureSlugs } },
+      select: { slug: true, startDate: true, endDate: true },
+    }),
+    prisma.appearance.findMany({
+      where: { playerSlug: { in: playerSlugs } },
+      select: { playerSlug: true, gameDate: true, started: true },
+    }),
+  ]);
+
+  const projMap = new Map(projections.map((p) => [`${p.fixtureSlug}:${p.playerSlug}`, p]));
+  const fixtureMap = new Map(fixtures.map((f) => [f.slug, f]));
+
+  // Outcomes are matched by date window, the same rule the per-fixture view
+  // uses: an Appearance carries no fixture, only a game date.
+  const startedIn = (playerSlug: string, from: Date | null, to: Date | null): boolean | null => {
+    if (!from || !to) return null;
+    const inWindow = appearances.filter(
+      // gameDate is nullable: an appearance whose date never synced can't be
+      // placed in a game week, and guessing would grade against the wrong one.
+      (a) => a.playerSlug === playerSlug && a.gameDate != null && a.gameDate >= from && a.gameDate <= to
+    );
+    return inWindow.length ? inWindow.some((a) => a.started) : null;
+  };
+
+  type Graded = Pick<ComparisonRow, "ourPStart" | "sorareStarterOdds" | "actualStarted">;
+  const byFixture = new Map<string, Graded[]>();
+
+  for (const a of aligned) {
+    const f = fixtureMap.get(a.fixtureSlug);
+    const proj = projMap.get(`${a.fixtureSlug}:${a.playerSlug}`);
+    const row: Graded = {
+      ourPStart: proj?.pStart ?? null,
+      sorareStarterOdds: proj?.sorareStarterOdds ?? null,
+      actualStarted: startedIn(a.playerSlug, f?.startDate ?? null, f?.endDate ?? null),
+    };
+    if (!byFixture.has(a.fixtureSlug)) byFixture.set(a.fixtureSlug, []);
+    byFixture.get(a.fixtureSlug)!.push(row);
+  }
+
+  const all = [...byFixture.values()].flat();
+  const overall = summarizeAccuracy(all);
+
+  const perFixture: FixtureAccuracy[] = [...byFixture.entries()]
+    .map(([fixtureSlug, rows]) => {
+      const { ours, sorare } = summarizeAccuracy(rows);
+      return {
+        fixtureSlug,
+        startDate: fixtureMap.get(fixtureSlug)?.startDate?.toISOString() ?? null,
+        graded: Math.max(ours.graded, sorare.graded),
+        ours,
+        sorare,
+      };
+    })
+    .filter((f) => f.graded > 0)
+    .sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
+
+  return { ours: overall.ours, sorare: overall.sorare, fixtures: perFixture.length, perFixture };
+}

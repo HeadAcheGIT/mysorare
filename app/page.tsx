@@ -26,6 +26,7 @@ import InSeasonAdvisor from "./components/InSeasonAdvisor";
 import SeasonReport from "./components/SeasonReport";
 import AuctionWatch from "./components/AuctionWatch";
 import SyncAll from "./components/SyncAll";
+import ProjectionAccuracy from "./components/ProjectionAccuracy";
 import AccountingImport from "./components/AccountingImport";
 
 type SavedLineup = {
@@ -1034,6 +1035,12 @@ export default function Page() {
                 compte. Les vraies divisions, avec leur vivier réel et une
                 compo proposée validée par Sorare, sont dans DivisionBoard
                 ci-dessous. */}
+            {/* Placed with the line-ups on purpose: this is the scoreboard for
+                every probability the tab above just used to recommend one. */}
+            <div className="mt-6 pt-4 border-t border-line">
+              <ProjectionAccuracy />
+            </div>
+
             {savedLineups.length > 0 && (
               <div className="mt-6">
                 <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">Compos sauvegardées</h2>
