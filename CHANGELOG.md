@@ -3,6 +3,42 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-21 (nuit) — Débrief : ce que la compo a coûté
+
+Un total ne dit rien tout seul. 210 points n'est ni bon ni mauvais ; 210 quand
+260 dormait sur le banc est une erreur à 50 points, et c'est ça qui fait
+progresser d'une semaine sur l'autre.
+
+Le débrief rejoue chaque game week : la compo alignée, le meilleur assemblage
+réellement disponible, et l'écart — avec les noms des joueurs qu'il aurait
+fallu prendre et de ceux qu'il fallait sortir.
+
+### Une seule règle de mesure des deux côtés
+
+Le piège : le score par carte vient de Sorare, un score reconstruit depuis nos
+`Appearance` vient de chez nous, et **rien ne garantit la même échelle**.
+Comparer l'un à l'autre produirait un « regret » qui ne mesure que l'écart
+entre deux sources. Les deux côtés de la comparaison sont donc calculés depuis
+la même source ; le total officiel Sorare est affiché à part, comme référence.
+
+### Ne pas se flatter
+
+Trois garde-fous, parce qu'un backtest qui triche est pire qu'aucun backtest :
+
+- **`acquiredAt`** exclut les cartes achetées *après* la game week — sinon le
+  « meilleur possible » pioche dans des cartes pas encore possédées ;
+- **même rareté** que ce qui a été aligné : une division est verrouillée en
+  rareté, proposer une compo interdite n'apprend rien ;
+- **regret borné à zéro** : si la compo alignée bat le « meilleur possible »,
+  le vivier est incomplet (carte vendue depuis), et « tu as fait mieux que
+  possible » serait un contresens.
+
+Les cartes vendues depuis manquent au vivier, donc l'écart annoncé est un
+**minorant** — et l'écran le dit.
+
+Aucune requête Sorare : tout est déjà local, et le vivier d'une game week
+passée n'est de toute façon plus interrogeable.
+
 ## 2026-08-21 (nuit) — La calibration existait, rien ne l'affichait
 
 En cherchant des améliorations, `grep` sur tout `app/` : **aucune** occurrence
