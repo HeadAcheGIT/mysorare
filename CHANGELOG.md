@@ -3,6 +3,25 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-21 (nuit) — La décomposition remonte jusqu'à la fiche joueur
+
+L'historique montrait déjà la part cash et la part crédits d'un achat, mais
+seulement pour les cartes **vendues**. Dans la galerie — les cartes qu'on
+détient encore, celles sur lesquelles on décide — la fiche n'affichait qu'un
+booléen « réglé en crédits », sans montant.
+
+La jointure se fait maintenant dans `squadView` : c'est une lecture en base,
+donc elle ne coûte rien à la galerie, et elle sert la brique comme la fiche.
+
+Nouveauté au passage : **le rendement sur le cash réellement sorti**. Une carte
+à 4,87 € dont 2,43 € en crédits n'a coûté que 2,44 € d'argent réel — sa
+plus-value rapportée à cette somme est le double de ce qu'annonce le chiffre
+public. C'est ce rapport-là qu'une décision de ROI regarde, et il n'apparaît
+que quand des crédits sont en jeu, pour ne pas alourdir les autres cartes.
+
+Le split reste `null` tant qu'aucun export comptable n'a été importé : « 0 € de
+crédits » serait une affirmation, pas une valeur par défaut.
+
 ## 2026-08-21 (nuit) — Alertes mercato à cinq niveaux, sans accès direct à X
 
 ### La question posée, et pourquoi la réponse n'est pas "on branche X"

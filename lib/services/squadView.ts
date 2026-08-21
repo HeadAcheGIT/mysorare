@@ -1,4 +1,5 @@
 import { prisma } from "../prisma";
+import { ledgerByCard, priceComposition } from "../accountingRoi";
 import type { NextGame, SquadCard } from "../types";
 
 export type { SquadCard };
@@ -37,7 +38,7 @@ export async function getSquadView(
 ): Promise<{ fixture: string | null; cards: SquadCard[] }> {
   const resolvedFixture = fixture ?? (await currentFixture());
 
-  const [cards, players, projections, overrides, lastAppearances, valuations, games] =
+  const [cards, players, projections, overrides, lastAppearances, valuations, games, ledgerRows] =
     await Promise.all([
     prisma.card.findMany(rarity ? { where: { rarity } } : undefined),
     prisma.player.findMany(),
@@ -68,6 +69,10 @@ export async function getSquadView(
     resolvedFixture
       ? prisma.game.findMany({ where: { fixtureSlug: resolvedFixture }, orderBy: { date: "asc" } })
       : Promise.resolve([]),
+    // The cash ledger, for the wallet/credit split of each purchase. A plain
+    // database read, so it costs the gallery nothing — and it is the only
+    // place that knows a 4,87 EUR card may have taken only 2,44 EUR of cash.
+    prisma.accountingEntry.findMany({ select: { cardSlug: true, entryType: true, eurAmount: true } }),
   ]);
 
   // Only the clubs this view can actually reference: every player's own club,
@@ -97,6 +102,8 @@ export async function getSquadView(
   const valuationMap = new Map(
     valuations.map((v) => [`${v.playerSlug}:${v.rarity}:${v.inSeason}`, v])
   );
+
+  const ledger = ledgerByCard(ledgerRows);
 
   /**
    * Each club's next match this game week.
@@ -196,6 +203,9 @@ export async function getSquadView(
         acquiredVia: c.acquiredVia,
         acquiredAt: c.acquiredAt?.toISOString() ?? null,
         paidWithCredits: c.paidWithCredits,
+        // Null unless an accounting export has been imported — an unknown
+        // split must stay unknown rather than read as "no credits used".
+        priceComposition: priceComposition(c.boughtPrice, ledger.get(c.slug)),
         nextGame: (p.clubSlug ? nextGameByClub.get(p.clubSlug) : null) ?? null,
         // Mapped field by field rather than spread: the row carries the
         // composite key and computedAt too, which aren't part of a Valuation.

@@ -4,8 +4,9 @@
  * without dragging server code into the browser bundle.
  */
 
-// Pure module, no server import — safe to re-export to the client.
+// Pure modules, no server imports — safe to re-export to the client.
 import type { Valuation } from "./valuation";
+import type { PriceComposition } from "./accountingRoi";
 
 export interface SquadCard {
   cardSlug: string;
@@ -104,6 +105,14 @@ export interface SquadCard {
    * playing this game week, which is itself worth seeing.
    */
   nextGame?: NextGame | null;
+  /**
+   * How this purchase was actually settled: the part that cost cash and the
+   * part that came off credits.
+   *
+   * Null until an accounting export has been imported — an unknown split has
+   * to stay unknown, because "0 EUR of credits" is a claim, not a default.
+   */
+  priceComposition?: PriceComposition | null;
 }
 
 export interface NextGame {

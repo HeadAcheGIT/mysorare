@@ -66,6 +66,10 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
   const reference = cardValue(card);
   const profit = reference != null && card.boughtPrice != null ? reference - card.boughtPrice : null;
   const profitSource = val?.value != null ? "ventes conclues" : card.price != null ? "prix CSV" : "floor CSV";
+  const composition = card.priceComposition ?? null;
+  // Return measured against the cash that actually left, not the sticker price.
+  const cashProfit =
+    reference != null && composition != null ? reference - composition.wallet : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center">
@@ -235,11 +239,40 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
               </p>
             )}
 
+            {/* What the purchase was actually made of. The price and the cash
+                that left the wallet differ whenever credits were involved, and
+                only the cash half is money you will not get back. */}
+            {composition && (
+              <p className="mt-1 font-mono text-[11px]">
+                {composition.credit > 0 ? (
+                  <>
+                    <span className="text-muted">dont </span>
+                    <span className="text-fg">{eur(composition.wallet)} portefeuille</span>
+                    <span className="text-muted"> + </span>
+                    <span className="text-limited">{eur(composition.credit)} crédits</span>
+                    <span className="text-muted"> ({composition.creditPct} %)</span>
+                  </>
+                ) : (
+                  <span className="text-muted">payé intégralement en cash ({eur(composition.wallet)})</span>
+                )}
+              </p>
+            )}
+
             {profit != null && (
               <p className={`mt-2 font-mono text-sm ${profit >= 0 ? "text-ok" : "text-warn"}`}>
                 {profit >= 0 ? "+" : ""}
                 {profit.toFixed(2)} € depuis l&apos;achat{" "}
                 <span className="text-muted text-[11px]">(vs {profitSource})</span>
+              </p>
+            )}
+
+            {/* The cash view of the same card. A card half-paid in credits has
+                a better return on money actually spent than the headline says,
+                and that is the number a ROI decision rests on. */}
+            {cashProfit != null && composition != null && composition.credit > 0 && (
+              <p className={`font-mono text-[11px] ${cashProfit >= 0 ? "text-ok" : "text-warn"}`}>
+                {cashProfit >= 0 ? "+" : ""}
+                {cashProfit.toFixed(2)} € sur le cash réellement sorti ({eur(composition.wallet)})
               </p>
             )}
           </div>
