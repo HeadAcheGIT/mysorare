@@ -3,6 +3,36 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-21 (nuit) — Assistant d'achat : le gain marginal, pas le prix
+
+Une carte pas chère avec un bon score n'est pas un bon achat pour autant : si
+tu alignes déjà mieux à ce poste, elle n'apporte **rien**. Le seul chiffre qui
+tranche un achat est le gain marginal — les points ajoutés à ta meilleure
+compo, rapportés à l'euro dépensé.
+
+Le classement se fait donc sur `points gagnés / €`, pas sur le prix ni sur le
+score brut. Un test le verrouille : entre une carte à 80 pts pour 100 € et une
+à 60 pts pour 5 €, c'est la seconde qui remonte.
+
+### Le vivier, ce sont tes watchlists
+
+Pas le marché entier : scouter le marché coûterait une requête cadencée par
+joueur avant d'afficher quoi que ce soit. Les joueurs suivis — ceux importés
+de tes watchlists Sorare — sont déjà enrichis et projetés. Les joueurs déjà
+possédés sont exclus : acheter une seconde carte de quelqu'un qu'on aligne
+déjà n'est pas une amélioration.
+
+### Ce qui est dit plutôt que deviné
+
+- **Budget inconnu** plutôt que supposé quand la session Sorare manque —
+  l'abordabilité passe à « inconnu » au lieu de masquer des options.
+- **Prix nul** ne devient jamais un rapport infini ; les cartes sans prix
+  passent en dernier, faute de pouvoir juger.
+- **Échantillon maigre** et **sortie récente** sont affichés sur la ligne : ni
+  le prix ni la projection ne portent une décision tout seuls.
+- Le gain compare au meilleur joueur du même poste. C'est une approximation,
+  pas un recalcul complet de la compo, et l'écran le dit.
+
 ## 2026-08-21 (nuit) — Rendement par division : où l'argent rentre vraiment
 
 « Quelle division a la plus grosse dotation » est la mauvaise question. Une

@@ -29,6 +29,7 @@ import SyncAll from "./components/SyncAll";
 import ProjectionAccuracy from "./components/ProjectionAccuracy";
 import Debrief from "./components/Debrief";
 import DivisionRoi from "./components/DivisionRoi";
+import BuyAdvice from "./components/BuyAdvice";
 import AccountingImport from "./components/AccountingImport";
 
 type SavedLineup = {
@@ -1196,6 +1197,8 @@ export default function Page() {
               Enchères sur mes joueurs suivis
             </h2>
             <div className="mb-6">
+              <BuyAdvice fixture={fixture} onSelectPlayer={openPlayer} />
+
               <AuctionWatch onSelectPlayer={openPlayer} onError={setError} />
             </div>
 
