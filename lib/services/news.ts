@@ -19,6 +19,26 @@ export interface NewsItem {
   date: string | null;
 }
 
+export interface NewsLocale {
+  hl: string;
+  gl: string;
+  ceid: string;
+}
+
+/** Default locale — unchanged from before this took a `locale` parameter. */
+export const FR_LOCALE: NewsLocale = { hl: "fr", gl: "FR", ceid: "FR:fr" };
+
+/**
+ * English locale — queried alongside French by the mercato alert pipeline
+ * (see transferStage.ts). Not cosmetic: measured against the live feed, a
+ * French-locale query for a player returns almost entirely French outlets
+ * (Foot01, Le10Sport, Sports.fr) and the English-locale query for the same
+ * player returns a near-disjoint set (ESPN, Sky Sports, Yahoo Sports) — two
+ * genuinely independent samples of the same story, not the same results
+ * relabelled.
+ */
+export const EN_LOCALE: NewsLocale = { hl: "en", gl: "US", ceid: "US:en" };
+
 const ENTITIES: Record<string, string> = {
   amp: "&",
   lt: "<",
@@ -51,8 +71,12 @@ function splitTitle(raw: string): { title: string; source: string | null } {
   return { title: raw.slice(0, i), source: raw.slice(i + 3) };
 }
 
-export async function searchPlayerNews(query: string, limit = 8): Promise<NewsItem[]> {
-  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=fr&gl=FR&ceid=FR:fr`;
+export async function searchPlayerNews(
+  query: string,
+  limit = 8,
+  locale: NewsLocale = FR_LOCALE
+): Promise<NewsItem[]> {
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=${locale.hl}&gl=${locale.gl}&ceid=${locale.ceid}`;
   const r = await fetch(url, { headers: { "user-agent": "Mozilla/5.0 (compatible; sorare-cockpit/1.0)" } });
   if (!r.ok) throw new Error(`Google News HTTP ${r.status}`);
   const xml = await r.text();

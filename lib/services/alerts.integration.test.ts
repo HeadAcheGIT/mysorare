@@ -4,8 +4,13 @@ import { prisma } from "../prisma";
 // Both hit the live Sorare/Google News APIs for real — mocked so the test is
 // deterministic and never spams a third-party service (see alerts.ts's own
 // comment on why the news half must stay a bounded, paced job in the first place).
+// Only searchPlayerNews itself is mocked — EN_LOCALE/FR_LOCALE stay real
+// since alerts.ts imports and passes them as plain values.
 vi.mock("./market", () => ({ getPlayerMarket: vi.fn() }));
-vi.mock("./news", () => ({ searchPlayerNews: vi.fn() }));
+vi.mock("./news", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./news")>()),
+  searchPlayerNews: vi.fn(),
+}));
 
 import { getPlayerMarket } from "./market";
 import { searchPlayerNews } from "./news";
@@ -85,7 +90,7 @@ describe("runAlerts", () => {
     expect((alerts.get("player-c") ?? []).some((a) => a.kind === "price_down")).toBe(false);
   });
 
-  it("flags transfer_rumor when a tracked player's news matches transfer vocabulary", async () => {
+  it("flags a transfer alert, staged, when a tracked player's news matches transfer vocabulary", async () => {
     await trackViaCard("player-d", "Player D");
     vi.mocked(getPlayerMarket).mockResolvedValue({
       slug: "player-d",
@@ -94,14 +99,42 @@ describe("runAlerts", () => {
       listedCount: 0,
     });
     vi.mocked(searchPlayerNews).mockResolvedValue([
-      { title: "Player D signs for a new club", link: "https://example.com", source: null, date: null },
+      { title: "Player D signs for a new club", link: "https://example.com", source: "Some Outlet", date: null },
     ]);
 
     await runAlerts(10_000);
 
     const alerts = await getAlertsBySlug();
     const rows = alerts.get("player-d") ?? [];
-    expect(rows.find((a) => a.kind === "transfer_rumor")?.detail).toContain("signs for a new club");
+    const transfer = rows.find((a) => a.kind === "transfer");
+    expect(transfer?.stage).toBe("official");
+    expect(transfer?.detail).toContain("signs for a new club");
+  });
+
+  it("clears a transfer alert once no recent headline matches anymore", async () => {
+    await trackViaCard("player-e", "Player E");
+    vi.mocked(getPlayerMarket).mockResolvedValue({
+      slug: "player-e",
+      name: "Player E",
+      floorByRarity: {}, floorInSeasonByRarity: {},
+      listedCount: 0,
+    });
+
+    vi.mocked(searchPlayerNews).mockResolvedValueOnce([
+      { title: "Player E in talks to leave the club", link: "https://a", source: "Outlet A", date: null },
+    ]).mockResolvedValueOnce([
+      { title: "Player E in talks to leave the club", link: "https://a", source: "Outlet A", date: null },
+    ]);
+    await runAlerts(10_000);
+    let alerts = await getAlertsBySlug();
+    expect(alerts.get("player-e")?.find((a) => a.kind === "transfer")?.stage).toBe("negotiation");
+
+    vi.mocked(searchPlayerNews).mockReset().mockResolvedValue([
+      { title: "Player E scores a hat-trick at the weekend", link: "https://b", source: "Outlet A", date: null },
+    ]);
+    await runAlerts(10_000);
+    alerts = await getAlertsBySlug();
+    expect((alerts.get("player-e") ?? []).some((a) => a.kind === "transfer")).toBe(false);
   });
 
   it("also tracks watchlisted (non-owned) players", async () => {

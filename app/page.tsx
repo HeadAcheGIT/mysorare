@@ -7,6 +7,7 @@ import { matchesSearch, searchTerms } from "@/lib/gallerySearch";
 import type { PriceComposition } from "@/lib/accountingRoi";
 import PlayerCard from "./components/PlayerCard";
 import AlertBadges, { type PlayerAlert } from "./components/AlertBadges";
+import MercatoAlerts from "./components/MercatoAlerts";
 import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, HistoryIcon, DataIcon } from "./components/NavIcons";
 import PlayerSheet from "./components/PlayerSheet";
 import GalleryFilters, { type SortKey, type SortDirection, type DivisionOption, DEFAULT_DIRECTION } from "./components/GalleryFilters";
@@ -910,6 +911,11 @@ export default function Page() {
             ) : (
               <>
                 <GallerySummary cards={squad} />
+
+                {/* Mercato-window transfer alerts, ranked worst-kept-secret
+                    first — hides itself entirely when nothing is moving, so
+                    it costs nothing outside the transfer window. */}
+                <MercatoAlerts squad={squad} alertsBySlug={alertsBySlug} onSelectPlayer={openPlayer} />
 
                 {insightsLoading ? (
                   <p className="font-mono text-sm text-muted">Analyse en cours…</p>

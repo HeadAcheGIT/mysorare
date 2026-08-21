@@ -515,16 +515,36 @@ model EthRate {
 }
 
 /// A standing signal worth a badge on the player's card: a live price swing,
-/// or a transfer-flavoured headline. One row per (player, kind) — re-running
-/// the check simply overwrites `detail`/`createdAt`, and the row is deleted
-/// once the condition no longer holds, so its mere presence means "still true".
+/// or a transfer heading through its stages. One row per (player, kind) —
+/// re-running the check simply overwrites the row, and it's deleted once the
+/// condition no longer holds, so its mere presence means "still true".
 model PlayerAlert {
   id         Int      @id @default(autoincrement())
   playerSlug String
-  /// "price_up" | "price_down" | "transfer_rumor"
+  /// "price_up" | "price_down" | "transfer"
   kind       String
   detail     String?
   createdAt  DateTime @default(now())
+
+  /// Transfer alerts only — see lib/services/transferStage.ts. One of
+  /// TransferStageId: "contact" | "negotiation" | "agreement" | "medical" |
+  /// "official", the strongest stage found across recent headlines.
+  stage         String?
+  /// How many *distinct* outlets independently reported at `stage` — the
+  /// corroboration signal a manager actually needs during mercato: one blog
+  /// claiming a done deal is a rumour, three unrelated outlets agreeing
+  /// within days is not.
+  sourceCount   Int?
+  /// Comma-joined distinct outlet names backing `stage`, for display without
+  /// a second query.
+  sourceNames   String?
+  /// The most recent headline at `stage`, so the badge links to the actual
+  /// article rather than asking to be trusted on its own — this is the
+  /// verification path in place of direct X/Twitter access (see README).
+  headlineUrl   String?
+  headlineTitle String?
+  /// When that headline was published, for "il y a 2j" in the UI.
+  headlineDate  DateTime?
 
   @@unique([playerSlug, kind])
 }

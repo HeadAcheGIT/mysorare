@@ -150,18 +150,43 @@ déclenche quand tu tapes dans l'app.
   `WatchlistItem`, rattachée à une `WatchlistGroup`). On peut créer
   plusieurs listes nommées (« Cibles Ligue 1 », « Bons plans », etc.) et un
   même joueur peut apparaître dans plusieurs listes à la fois.
-- **Alertes prix et transferts** : une fois par jour, `/api/cron/alerts`
-  compare le floor price actuel de chaque joueur possédé ou suivi à sa
-  dernière valeur connue (icône 📉/📈 sur la carte si le mouvement dépasse
-  10 %), et cherche une actualité récente au vocabulaire "transfert" (icône
-  📰). Volontairement lent et borné à ce qui est réellement suivi — jamais
-  un scan de tout le marché, et jamais en direct sur une simple ouverture
-  d'écran. Voir `lib/services/alerts.ts`.
+- **Alertes prix** : une fois par jour, `/api/cron/alerts` compare le floor
+  price actuel de chaque joueur possédé ou suivi à sa dernière valeur connue
+  — icône 📉/📈 sur la carte si le mouvement dépasse 10 %.
+- **Alertes mercato, à cinq niveaux** : Intérêt 👀 → Négociations 🗣️ → Accord
+  trouvé 🤝 → Visite médicale 🏥 → Officialisé ✅, classées et croisées, pas
+  un simple mot-clé « transfert ». Section « MERCATO » en haut de l'onglet
+  Semaine, en plus du badge sur chaque carte.
 
-Pour tout le reste (rumeurs détaillées, contexte, actu générale) : c'est le
-rôle de la conversation avec Claude, pas de l'app. Poser la question
-directement marche mieux qu'un flux automatisé pour ce qui n'est pas déjà
-un signal chiffré ci-dessus.
+  **Pas d'accès direct à X/Twitter.** C'est là que les transferts se
+  confirment en premier via des journalistes comme Fabrizio Romano, mais
+  l'API de recherche de X est payante (≈ 200 $/mois minimum côté X) et ce
+  projet n'a pas de clé configurée. À la place : deux requêtes Google News
+  par joueur, une en français (« transfert ») et une en anglais
+  (« transfer ») — mesuré en pratique, elles renvoient des médias presque
+  entièrement différents (Foot01/Le10Sport/RMC côté français,
+  ESPN/Sky Sports/Yahoo Sports côté anglais), donc deux échantillons
+  réellement indépendants de la même histoire plutôt que la même liste deux
+  fois. Chaque titre est classé dans l'un des cinq niveaux ci-dessus par
+  vocabulaire (`lib/services/transferStage.ts`), et le niveau affiché est le
+  plus élevé atteint parmi les titres des 21 derniers jours.
+
+  **La fiabilité vient du recoupement, pas d'une seule source.** Chaque
+  alerte affiche le nombre de médias distincts qui rapportent ce niveau —
+  « 3 sources concordantes » vaut plus qu'« 1 seule source — à vérifier ».
+  Un lien vers l'article exact accompagne toujours l'alerte : ceci reste un
+  classement automatique de titres, pas une confirmation, et le clic pour
+  vérifier reste le geste final. Voir `lib/services/alerts.ts` et
+  `lib/services/transferStage.ts`.
+
+  Volontairement lent et borné à ce qui est réellement suivi — jamais un
+  scan de tout le marché, et jamais en direct sur une simple ouverture
+  d'écran.
+
+Pour tout le reste (contexte approfondi sur une rumeur, actu générale) :
+c'est le rôle de la conversation avec Claude, pas de l'app. Poser la
+question directement marche mieux qu'un flux automatisé pour ce qui n'est
+pas déjà un signal chiffré ci-dessus.
 
 ## Pourquoi la synchro est en deux temps
 

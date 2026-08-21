@@ -3,6 +3,76 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-21 (nuit) — Alertes mercato à cinq niveaux, sans accès direct à X
+
+### La question posée, et pourquoi la réponse n'est pas "on branche X"
+
+Demande initiale : un système d'alertes mercato "très fiable", croisant
+plusieurs sources, "idéalement X.com". L'API de recherche de X est payante
+depuis 2023 (≈ 200 $/mois minimum) et ce projet n'a pas de clé — vendre un
+contournement gratuit comme "fiable" aurait été malhonnête, exactement le
+genre de solution qui casse sans prévenir en pleine fenêtre de transferts.
+Trois questions posées avant d'écrire une ligne : accès X (payant / sources
+gratuites renforcées / piste non officielle à explorer), granularité des
+niveaux d'alerte, et canal (in-app / push). Réponses : sources gratuites
+renforcées, échelle détaillée, in-app uniquement.
+
+### Deux requêtes, pas une — et ce n'est pas cosmétique
+
+Mesuré contre l'API Google News réelle sur Ousmane Dembélé : une requête
+`hl=fr` ("transfert") renvoie Sports.fr, Goal.com, Foot01, Le10Sport,
+Foot Mercato — une requête `hl=en` ("transfer") renvoie ESPN, Sky Sports,
+Yahoo Sports, FourFourTwo, Sports Illustrated. Les deux ensembles sont
+presque entièrement disjoints. `checkTransferAlert` interroge donc les deux
+langues et fusionne par lien, ce qui est un vrai recoupement de sources
+indépendantes plutôt que la même liste interrogée deux fois.
+
+### Cinq niveaux, classés par vocabulaire, pas par mot-clé unique
+
+`lib/services/transferStage.ts` remplace l'ancien badge binaire
+"rumeur de transfert" par cinq paliers : Intérêt → Négociations → Accord
+trouvé → Visite médicale → Officialisé. Chaque titre est classé par la
+règle la plus forte qu'il matche (un scoop surprend directement au niveau
+"officiel" sans être jamais passé par "négociations" dans la presse), et
+une liste de négation (`dément`, `not yet`, `denies`...) empêche un
+démenti de compter comme un signal positif.
+
+La fiabilité annoncée vient du recoupement, pas de la classification seule :
+chaque alerte affiche le nombre de médias **distincts** ayant rapporté ce
+niveau précis — "3 sources concordantes" contre "1 seule source — à
+vérifier". Le lien vers l'article exact accompagne toujours l'alerte ;
+ceci reste un classement automatique de titres, jamais une confirmation.
+
+### Un bug JavaScript qui aurait fait échouer discrètement tout le classement
+
+`\b` (limite de mot) en JavaScript ne connaît que les caractères ASCII —
+`\btrouvé\b` ne matche jamais "trouvé" parce que la position juste après le
+"é" n'est pas vue comme une frontière. La quasi-totalité du vocabulaire
+mercato étant accentuée en français, ça aurait cassé le classement sur
+silence, pas d'erreur, juste zéro alerte. Remplacé par une paire de
+lookaround `(?<![\p{L}\p{N}_])...(?![\p{L}\p{N}_])` avec le flag `u`,
+Unicode plutôt qu'ASCII — repéré avant d'atteindre la production parce que
+les tests utilisaient des titres réels ("Accord trouvé...") plutôt que des
+exemples choisis pour passer.
+
+### Fenêtre de fraîcheur mesurée, pas devinée
+
+21 jours : un titre plus ancien ne dit plus rien d'une situation *en
+cours*. Trouvé en testant en conditions réelles — les meilleurs résultats
+Google News pour un joueur donné datent parfois de plusieurs semaines
+(le classement mélange pertinence et récence), et sans cette fenêtre le
+système aurait affiché une "négociation" vieille d'un mois comme si elle
+était d'aujourd'hui.
+
+### Où ça vit
+
+Section "MERCATO" en tête de l'onglet Semaine (masquée si rien à signaler),
+plus le badge existant sur chaque carte, désormais coloré par palier
+(muted → flood → warn, la même échelle de gravité que partout ailleurs
+dans l'app). Migration `l_transfer_stage` : `stage`, `sourceCount`,
+`sourceNames`, `headlineUrl`, `headlineTitle`, `headlineDate` ajoutés à
+`PlayerAlert`, tous nullables — les alertes prix existantes ne changent pas.
+
 ## 2026-08-21 (soir) — Le prix d'achat, décomposé en cash et crédits
 
 ### Pourquoi un import et pas une synchro

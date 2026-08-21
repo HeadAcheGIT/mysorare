@@ -1,12 +1,15 @@
 import { prisma } from "../prisma";
 import { getPlayerMarket } from "./market";
-import { searchPlayerNews } from "./news";
+import { searchPlayerNews, EN_LOCALE, type NewsItem } from "./news";
+import { summarizeTransferSignal } from "./transferStage";
 
 /**
  * Two standing signals worth a badge on a card: the live floor price moving
- * meaningfully since the last check, and a transfer-flavoured headline in
- * recent news. Both only run for players actually owned or watchlisted — a
- * bounded, small set — never the whole market:
+ * meaningfully since the last check, and where a transfer story has reached
+ * (see transferStage.ts for the five-stage classifier and why it exists —
+ * X's own API is the direct route to this and it's paid, so this is the
+ * honest alternative). Both only run for players actually owned or
+ * watchlisted — a bounded, small set — never the whole market:
  *  - Price checks reuse the public API's own pacing (see publicClient.ts).
  *  - News checks reuse Google News' RSS search (see news.ts), which that
  *    file's own comments call a courtesy feed to be used "never in bulk" —
@@ -16,15 +19,8 @@ import { searchPlayerNews } from "./news";
 
 const PRICE_MOVE_THRESHOLD = 0.1; // 10%
 const NEWS_DELAY_MS = 1500;
-export const TRANSFER_KEYWORDS =
-  /\b(transfert|mercato|transfer|signe|signs|quitte|quitter|leaves|s'engage|prêt(?:é)?|loan|rejoin[dt]|part(?:ir)?|deal|move to|vers le [A-Z]|move away)\b/i;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Pure: does any headline read as transfer-flavoured? Split out for unit testing. */
-export function findTransferHeadline<T extends { title: string }>(items: T[]): T | null {
-  return items.find((n) => TRANSFER_KEYWORDS.test(n.title)) ?? null;
-}
 
 interface TrackedPlayer {
   slug: string;
@@ -123,10 +119,47 @@ async function checkPriceAlert(p: TrackedPlayer): Promise<void> {
   await upsertOrClearAlert(p.slug, "price_up", kind === "price_up" ? detail : null);
 }
 
+/**
+ * Two independent queries, not one: French vocabulary ("transfert") and
+ * English ("transfer") return almost entirely disjoint outlet sets against
+ * the live feed (see transferStage.ts's module doc for the measured
+ * example), so this is genuinely two samples of the story rather than the
+ * same handful of results twice. Quoted exact-phrase, same reasoning as
+ * app/api/news/route.ts: an unquoted common surname pulls in unrelated
+ * people, and a transfer alert is exactly the kind of thing that must be
+ * about the right person.
+ */
 async function checkTransferAlert(p: TrackedPlayer): Promise<void> {
-  const items = await searchPlayerNews(`${p.name} transfert`, 5);
-  const hit = findTransferHeadline(items);
-  await upsertOrClearAlert(p.slug, "transfer_rumor", hit ? hit.title : null);
+  const [fr, en] = await Promise.all([
+    searchPlayerNews(`"${p.name}" transfert`, 6),
+    searchPlayerNews(`"${p.name}" transfer`, 6, EN_LOCALE),
+  ]);
+
+  const merged = new Map<string, NewsItem>();
+  for (const it of [...fr, ...en]) if (it.link) merged.set(it.link, it);
+
+  const signal = summarizeTransferSignal([...merged.values()]);
+
+  if (!signal) {
+    await prisma.playerAlert.deleteMany({ where: { playerSlug: p.slug, kind: "transfer" } });
+    return;
+  }
+
+  const headlineDate = signal.headline.date ? new Date(signal.headline.date) : null;
+  const data = {
+    detail: signal.headline.title,
+    stage: signal.stage,
+    sourceCount: signal.sources.length,
+    sourceNames: signal.sources.join(", "),
+    headlineUrl: signal.headline.link,
+    headlineTitle: signal.headline.title,
+    headlineDate: headlineDate && !Number.isNaN(headlineDate.getTime()) ? headlineDate : null,
+  };
+  await prisma.playerAlert.upsert({
+    where: { playerSlug_kind: { playerSlug: p.slug, kind: "transfer" } },
+    create: { playerSlug: p.slug, kind: "transfer", ...data },
+    update: { ...data, createdAt: new Date() },
+  });
 }
 
 export interface AlertsProgress {
@@ -144,8 +177,12 @@ export interface AlertsProgress {
  * two full loops sharing one budget, and the price loop is the slow one: at
  * the public API's unaccredited pacing it is ~3 s per player, so on a real
  * gallery it consumed the whole 50 s and the news loop below it ran for
- * exactly zero players. `transfer_rumor` alerts could never appear at all —
- * measured on a 17-player gallery: priceChecked 17, newsChecked 0.
+ * exactly zero players. Transfer alerts could never appear at all — measured
+ * on a 17-player gallery: priceChecked 17, newsChecked 0.
+ *
+ * Now doubly true: since checkTransferAlert fires two Google News queries
+ * per player instead of one (see its own comment), the news half got slower,
+ * which makes running it for zero players an even bigger loss than before.
  *
  * Interleaving costs price coverage per run and buys the news check its
  * existence back; the staleness ordering is what makes the reduced per-run
@@ -178,12 +215,33 @@ export async function runAlerts(budgetMs: number): Promise<AlertsProgress> {
   return { priceChecked, newsChecked };
 }
 
-export async function getAlertsBySlug(): Promise<Map<string, { kind: string; detail: string | null }[]>> {
+export interface AlertRow {
+  kind: string;
+  detail: string | null;
+  /** Transfer alerts only — see PlayerAlert in schema.prisma. */
+  stage: string | null;
+  sourceCount: number | null;
+  sourceNames: string | null;
+  headlineUrl: string | null;
+  headlineTitle: string | null;
+  headlineDate: string | null;
+}
+
+export async function getAlertsBySlug(): Promise<Map<string, AlertRow[]>> {
   const rows = await prisma.playerAlert.findMany();
-  const map = new Map<string, { kind: string; detail: string | null }[]>();
+  const map = new Map<string, AlertRow[]>();
   for (const r of rows) {
     const list = map.get(r.playerSlug) ?? [];
-    list.push({ kind: r.kind, detail: r.detail });
+    list.push({
+      kind: r.kind,
+      detail: r.detail,
+      stage: r.stage,
+      sourceCount: r.sourceCount,
+      sourceNames: r.sourceNames,
+      headlineUrl: r.headlineUrl,
+      headlineTitle: r.headlineTitle,
+      headlineDate: r.headlineDate?.toISOString() ?? null,
+    });
     map.set(r.playerSlug, list);
   }
   return map;

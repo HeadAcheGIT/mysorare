@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyPriceChange, findTransferHeadline, TRANSFER_KEYWORDS } from "./alerts";
+import { classifyPriceChange } from "./alerts";
 
 describe("classifyPriceChange", () => {
   it("is null without a previous price", () => {
@@ -40,43 +40,6 @@ describe("classifyPriceChange", () => {
   });
 });
 
-describe("TRANSFER_KEYWORDS / findTransferHeadline", () => {
-  it("matches common French and English transfer vocabulary", () => {
-    for (const title of [
-      "Le mercato s'accélère pour ce joueur",
-      "Player signs new deal with rivals",
-      "Il quitte son club après 5 ans",
-      "Prêté pour la saison",
-      "Rumeur : transfert imminent",
-    ]) {
-      expect(TRANSFER_KEYWORDS.test(title)).toBe(true);
-    }
-  });
-
-  it("does not match ordinary match-report headlines", () => {
-    for (const title of [
-      "Match report: 3-1 win at home",
-      "Player scores brace in derby",
-      "Injury update ahead of the weekend",
-    ]) {
-      expect(TRANSFER_KEYWORDS.test(title)).toBe(false);
-    }
-  });
-
-  it("findTransferHeadline returns the first matching item", () => {
-    const items = [
-      { title: "Nothing to see here" },
-      { title: "He signs for a new club" },
-      { title: "Another transfer headline" },
-    ];
-    expect(findTransferHeadline(items)?.title).toBe("He signs for a new club");
-  });
-
-  it("findTransferHeadline returns null when nothing matches", () => {
-    expect(findTransferHeadline([{ title: "Calm news day" }])).toBeNull();
-  });
-
-  it("findTransferHeadline returns null for an empty list", () => {
-    expect(findTransferHeadline([])).toBeNull();
-  });
-});
+// Transfer-headline classification (contact/negotiation/agreement/medical/
+// official, plus source corroboration) moved to transferStage.ts and is
+// tested there — findTransferHeadline/TRANSFER_KEYWORDS no longer exist.
