@@ -12,3 +12,9 @@ export function relativeDate(iso: string): string {
 export type Money = { amount: number; currency: string } | null;
 
 export const formatMoney = (m: Money) => (m == null ? "—" : `${m.amount.toFixed(2)} ${m.currency === "USD" ? "$" : "€"}`);
+
+/**
+ * French ordinal: 1 is "1ᵉʳ", everything else takes "ᵉ". League positions are
+ * printed all over the app and "1ᵉ" is simply not a French word.
+ */
+export const ordinalFr = (n: number) => (n === 1 ? `${n}ᵉʳ` : `${n}ᵉ`);

@@ -1,5 +1,5 @@
 import { prisma } from "../prisma";
-import { publicGraphql, CARD_OWNERSHIP_PUBLIC, PLAYERS_PER_QUERY } from "../sorare/publicClient";
+import { publicGraphql, CARD_OWNERSHIP_PUBLIC, CARDS_PER_OWNERSHIP_QUERY } from "../sorare/publicClient";
 import { getEthEurRate, weiToEth } from "./ethRate";
 
 /**
@@ -86,18 +86,18 @@ export interface AcquisitionProgress {
 
 /**
  * Fills in acquisition details for a slice of the gallery and returns a cursor.
- * Batched by PLAYERS_PER_QUERY cards per request, so a full gallery is a
+ * Batched by CARDS_PER_OWNERSHIP_QUERY cards per request, so a full gallery is a
  * handful of calls rather than one per card.
  */
 export async function syncAcquisitionsBatch(cursor: number, batchSize = 3): Promise<AcquisitionProgress> {
   const all = await prisma.card.findMany({ select: { slug: true }, orderBy: { slug: "asc" } });
-  const slice = all.slice(cursor, cursor + batchSize * PLAYERS_PER_QUERY);
+  const slice = all.slice(cursor, cursor + batchSize * CARDS_PER_OWNERSHIP_QUERY);
 
   let priced = 0;
   let withCredits = 0;
 
-  for (let i = 0; i < slice.length; i += PLAYERS_PER_QUERY) {
-    const slugs = slice.slice(i, i + PLAYERS_PER_QUERY).map((c) => c.slug);
+  for (let i = 0; i < slice.length; i += CARDS_PER_OWNERSHIP_QUERY) {
+    const slugs = slice.slice(i, i + CARDS_PER_OWNERSHIP_QUERY).map((c) => c.slug);
     if (!slugs.length) continue;
 
     try {

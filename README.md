@@ -42,9 +42,12 @@ optionnelle : l'app fonctionne entièrement sans.
 
 L'API publique plafonne la complexité des requêtes à 500 (30 000 avec une clé)
 et à 20 requêtes/minute (600 avec une clé). Concrètement, sans clé le
-calendrier détaillé des matchs est hors budget et l'enrichissement se fait par
-lots de 15 joueurs. Renseigner `SORARE_API_KEY` accélère tout d'un ordre de
-grandeur — la demande se fait auprès de Sorare.
+calendrier détaillé des matchs est hors budget, l'enrichissement (photos,
+clubs, blessures, forme) se fait par lots de 10 joueurs au lieu de 15, et les
+prix d'achat réels par lots de 5 cartes au lieu de 15 — sur une galerie de
+quelques centaines de cartes, c'est la différence entre une synchro de
+quelques minutes et une demi-heure. Renseigner `SORARE_API_KEY` accélère tout
+d'un ordre de grandeur — la demande se fait auprès de Sorare.
 
 ## Déploiement, étape par étape
 
@@ -242,10 +245,12 @@ de quota à chaque vérification.
 
 Programme linéaire en variables binaires (`javascript-lp-solver`) : maximise
 le score projeté + bonus capitaine, sous contraintes de taille, postes,
-rareté, clubs, cartes in-season, plafond de L15 cumulé. Les règles par
-compétition sont dans `lib/services/rules.ts` — ce sont des points de départ,
-recopie les vraies valeurs depuis la page de règles de chaque compétition sur
-Sorare, elles changent d'une saison à l'autre.
+rareté, clubs, captain autorisé. Il tourne dans l'onglet **Compo**, division
+par division : le vivier vient du `myBench` réel de Sorare pour cette
+division (pas d'une liste de compétitions écrite à la main), et la compo
+proposée est ensuite validée par `previewSo5Lineup` — le verdict règle par
+règle de Sorare, pas une réimplémentation locale des règles. Voir
+`lib/services/divisionLineup.ts`.
 
 ## Si le schéma GraphQL a dérivé
 

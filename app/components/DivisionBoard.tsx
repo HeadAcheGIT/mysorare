@@ -266,7 +266,11 @@ export default function DivisionBoard({
         >
           {fixtures.map((f) => (
             <option key={f.slug} value={f.slug}>
-              {f.gameWeek != null ? `GW${f.gameWeek}` : (f.displayName ?? f.slug)}
+              {/* Sorare exposes two numbers: `displayName` counts weeks inside the
+                  season ("Game Week 7") and `gameWeek` counts them since 2019
+                  (706). The header uses the first, so this picking the second
+                  labelled the very same week two different ways one tab apart. */}
+              {f.displayName ?? (f.gameWeek != null ? `GW${f.gameWeek}` : f.slug)}
               {f.startDate && f.endDate ? ` · ${shortDate(f.startDate)}–${shortDate(f.endDate)}` : ""}
               {f.slug === currentFixture ? " · en cours" : ""}
             </option>

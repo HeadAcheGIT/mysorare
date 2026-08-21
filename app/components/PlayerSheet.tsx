@@ -184,7 +184,7 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
               <p className="mt-1 font-mono text-[11px] text-muted">
                 {val
                   ? "Aucune vente conclue sur ce marché — rien à quoi comparer."
-                  : "Pas encore valorisée. Lance « Valoriser » depuis la Galerie."}
+                  : "Pas encore valorisée. Lance « Tout synchroniser » depuis l'onglet Données."}
               </p>
             )}
 

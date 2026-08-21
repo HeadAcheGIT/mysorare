@@ -129,23 +129,38 @@ export async function accountingSummary(): Promise<AccountingSummary> {
   };
 }
 
-/** Purchase-price composition for a set of cards, keyed by card slug. */
+/**
+ * Purchase-price composition for a set of cards, keyed by card slug.
+ *
+ * Reads the price from `Card` **and** from `Sale`, because the only caller is
+ * the history screen and every slug it asks about is a card that has left the
+ * gallery — csvImport deletes the `Card` row and records a `Sale` in its
+ * place. Looking in `Card` alone therefore matched nothing at all, and the
+ * wallet/credit line never rendered once.
+ */
 export async function compositionsFor(cardSlugs: string[]): Promise<Map<string, PriceComposition>> {
   if (!cardSlugs.length) return new Map();
 
-  const [entries, cards] = await Promise.all([
+  const [entries, cards, sales] = await Promise.all([
     prisma.accountingEntry.findMany({
       where: { cardSlug: { in: cardSlugs } },
       select: { cardSlug: true, entryType: true, eurAmount: true },
     }),
     prisma.card.findMany({ where: { slug: { in: cardSlugs } }, select: { slug: true, boughtPrice: true } }),
+    prisma.sale.findMany({ where: { cardSlug: { in: cardSlugs } }, select: { cardSlug: true, boughtPrice: true } }),
   ]);
+
+  // Sale first, then Card: a slug in both is a card that was sold and later
+  // bought back, and the sale row is the one the history screen is showing.
+  const priceBySlug = new Map<string, number | null>();
+  for (const c of cards) priceBySlug.set(c.slug, c.boughtPrice);
+  for (const s of sales) priceBySlug.set(s.cardSlug, s.boughtPrice);
 
   const byCard = ledgerByCard(entries);
   const out = new Map<string, PriceComposition>();
-  for (const c of cards) {
-    const comp = priceComposition(c.boughtPrice, byCard.get(c.slug));
-    if (comp) out.set(c.slug, comp);
+  for (const [slug, price] of priceBySlug) {
+    const comp = priceComposition(price, byCard.get(slug));
+    if (comp) out.set(slug, comp);
   }
   return out;
 }

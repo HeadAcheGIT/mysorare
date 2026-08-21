@@ -77,15 +77,41 @@ query Leagues {
   }
 }`;
 
+/**
+ * `lastFifteenSo5Appearances` alongside `slug`: a flat scalar, so it costs
+ * almost nothing extra, and it's what lets a small sample get filtered out
+ * before the expensive per-player market query below ever sees it — see
+ * MIN_SCOUT_APPEARANCES.
+ */
 const LEAGUE_PLAYERS_QUERY = `
 query LeaguePlayers($slug: String!, $first: Int!) {
   football {
     competition(slug: $slug) {
       displayName
-      playersByLastFiveAverage(first: $first) { nodes { slug } }
+      playersByLastFiveAverage(first: $first) { nodes { slug lastFifteenSo5Appearances } }
     }
   }
 }`;
+
+/**
+ * How many candidates to pull from Sorare's own ranking before filtering.
+ * Measured against the live API: the connection caps out at 50 nodes
+ * regardless of a larger `first`, and even 120 costs nothing extra — it's a
+ * flat scalar field, no nested connection — so there's no reason to ask for
+ * less.
+ */
+const SCOUT_CANDIDATE_POOL = 50;
+
+/**
+ * A player with one or two games this season can top "best form" purely on
+ * sample noise — Ligue 1 measured a goalkeeper on lastFiveSo5Appearances=1,
+ * ranked first, average 85. That isn't a form signal, it's one match, and
+ * recommending a buy off it is confident nonsense. Three games is the same
+ * bar `trend()` in insights.ts uses for a related reason: not enough to
+ * separate form from a lucky night, but enough that it stops happening on the
+ * very first appearance of a season.
+ */
+const MIN_SCOUT_APPEARANCES = 3;
 
 /**
  * Depth 7 exactly: query → players → card → offer → side → amounts → cents.
@@ -242,13 +268,37 @@ function buildTrend(data: {
   return { sales, lastSale: sales[0]?.money ?? null, lastSaleDate: sales[0]?.date ?? null, trendPct };
 }
 
+/**
+ * Leagues Sorare returns under `football` that aren't football.
+ *
+ * Verified against the live API: `football.leaguesOpenForGameStats` includes
+ * `mlb` and `nba`. Picking one in a football scouting screen can only produce
+ * an empty or nonsensical answer, and `Competition` exposes no `sport` field
+ * to filter on, so they're named here. Add to this list if Sorare adds a
+ * sport; the check is by slug because the display names are theirs to change.
+ */
+const NON_FOOTBALL_LEAGUES = new Set(["mlb", "nba"]);
+
 export async function listLeagues(): Promise<League[]> {
   const data = await publicGraphql<{
     football: { leaguesOpenForGameStats: { slug: string; displayName: string; country: { code: string } | null }[] };
   }>(LEAGUES_QUERY);
 
-  return (data.football?.leaguesOpenForGameStats ?? [])
-    .map((l) => ({ slug: l.slug, name: l.displayName, country: l.country?.code ?? null }))
+  const leagues = (data.football?.leaguesOpenForGameStats ?? [])
+    .filter((l) => !NON_FOOTBALL_LEAGUES.has(l.slug))
+    .map((l) => ({ slug: l.slug, name: l.displayName, country: l.country?.code ?? null }));
+
+  // Sorare reuses a display name across countries — "Play-offs 1/2" is both
+  // `play-offs-1-2-de` and `play-offs-1-2-fr` — and the picker shows the name
+  // alone, so the two were indistinguishable. Only the ambiguous ones get the
+  // country appended; naming every league that way would be noise.
+  const seen = new Map<string, number>();
+  for (const l of leagues) seen.set(l.name, (seen.get(l.name) ?? 0) + 1);
+
+  return leagues
+    .map((l) =>
+      (seen.get(l.name) ?? 0) > 1 && l.country ? { ...l, name: `${l.name} (${l.country.toUpperCase()})` } : l
+    )
     .sort((a, b) => a.name.localeCompare(b.name, "fr"));
 }
 
@@ -259,11 +309,25 @@ export async function scoutLeague(
   enrich = true
 ): Promise<{ league: string | null; players: ScoutPlayer[] }> {
   const list = await publicGraphql<{
-    football: { competition: { displayName: string; playersByLastFiveAverage: { nodes: { slug: string }[] } } | null };
-  }>(LEAGUE_PLAYERS_QUERY, { slug: leagueSlug, first: limit });
+    football: {
+      competition: {
+        displayName: string;
+        playersByLastFiveAverage: { nodes: { slug: string; lastFifteenSo5Appearances: number | null }[] };
+      } | null;
+    };
+  }>(LEAGUE_PLAYERS_QUERY, { slug: leagueSlug, first: SCOUT_CANDIDATE_POOL });
 
   const comp = list.football?.competition;
-  const slugs = (comp?.playersByLastFiveAverage?.nodes ?? []).map((n) => n.slug);
+  const candidates = comp?.playersByLastFiveAverage?.nodes ?? [];
+
+  // Sorare's own ordering (best L5 average first) is kept, just thinned of
+  // small samples before the top `limit` is taken — filtering after slicing
+  // would let a one-match player crowd out real candidates instead of simply
+  // being skipped.
+  const slugs = candidates
+    .filter((n) => (n.lastFifteenSo5Appearances ?? 0) >= MIN_SCOUT_APPEARANCES)
+    .slice(0, limit)
+    .map((n) => n.slug);
   if (!slugs.length) return { league: comp?.displayName ?? null, players: [] };
 
   const market = await publicGraphql<{ players: any[] }>(PLAYER_MARKET_QUERY, { slugs, rarity });

@@ -2,8 +2,22 @@ import bcrypt from "bcryptjs";
 import { assertConfigured, config } from "../config";
 import { prisma } from "../prisma";
 import { refreshAccessToken, isOAuthConfigured } from "./oauth";
+import { ApiError } from "../apiHandler";
 
-export class SorareAuthError extends Error {}
+/**
+ * A missing or rejected Sorare session. An `ApiError` with a 401 rather than a
+ * bare Error, because the app is designed to run signed out — the gallery
+ * comes from a CSV — so "not connected" is an ordinary state, not a fault.
+ * Left as a plain Error it reached withErrorHandling's catch-all and every
+ * session-only route answered a signed-out user with a 500 and a logged stack
+ * trace: red in the browser console on a normal page load, and noise in the
+ * deploy logs that hides real failures.
+ */
+export class SorareAuthError extends ApiError {
+  constructor(message: string) {
+    super(message, 401);
+  }
+}
 
 const SIGN_IN = (aud: string) => `
 mutation SignInMutation($input: signInInput!) {
@@ -188,7 +202,7 @@ export async function getToken(force = false): Promise<string> {
   // supported path — it handles 2FA without an env var edit and a redeploy.
   if (!config.sorareEmail || !config.sorarePassword) {
     throw new SorareAuthError(
-      "Non connecté à Sorare. Ouvre l'onglet Synchro et connecte-toi avec ton email, ton mot de passe et ton code à 6 chiffres."
+      "Non connecté à Sorare. Ouvre l'onglet Données et connecte-toi avec ton email, ton mot de passe et ton code à 6 chiffres."
     );
   }
 

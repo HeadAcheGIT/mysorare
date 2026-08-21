@@ -5,6 +5,7 @@ import AlertBadges, { type PlayerAlert } from "./AlertBadges";
 import PlayerBadges from "./PlayerBadges";
 import StartProbability from "./StartProbability";
 import { POSITION_SHORT, cardValue, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
+import { ordinalFr } from "@/lib/format";
 
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
 const eur = (v: number | null) => (v == null ? "—" : `${v.toFixed(2)} €`);
@@ -149,7 +150,7 @@ export default function PlayerCard({
                 </span>{" "}
                 {card.nextGame.opponentName}
                 {card.nextGame.opponentRank != null && (
-                  <span className="text-muted/70"> ({card.nextGame.opponentRank}ᵉ)</span>
+                  <span className="text-muted/70"> ({ordinalFr(card.nextGame.opponentRank)})</span>
                 )}
               </>
             ) : (

@@ -66,16 +66,49 @@ function trend(scores: number[]): number | null {
   return recent - older;
 }
 
+/**
+ * Collapses several cards of the same player into one row.
+ *
+ * The loop above runs per card because the money signals (loss, sell_high,
+ * dead weight) are card-specific — different serials, different prices.
+ * The form signals are not: "15/15 matchs · moyenne 50" is a fact about
+ * the player, so owning two Maignans printed the identical line twice and
+ * cost a real recommendation, since each group is capped at twelve.
+ *
+ * The most valuable card wins — it's the one whose price the row shows —
+ * and the copies are noted rather than dropped silently, because how many
+ * you hold is exactly what makes a duplicate worth acting on.
+ */
+export function dedupeByPlayer(xs: Insight[]): Insight[] {
+  const best = new Map<string, Insight>();
+  const counts = new Map<string, number>();
+  for (const x of xs) {
+    counts.set(x.playerSlug, (counts.get(x.playerSlug) ?? 0) + 1);
+    const kept = best.get(x.playerSlug);
+    if (!kept || x.weight > kept.weight) best.set(x.playerSlug, x);
+  }
+  return [...best.values()].map((x) => {
+    const n = counts.get(x.playerSlug) ?? 1;
+    return n > 1 ? { ...x, reason: `${x.reason} · ×${n} cartes` } : x;
+  });
+}
+
 export async function buildInsights(
   fixtureSlug: string | null
 ): Promise<{ groups: InsightGroup[]; unenriched: number }> {
-  const [cards, players, clubs, projections, valuations] = await Promise.all([
+  const [cards, players, projections, valuations] = await Promise.all([
     prisma.card.findMany(),
     prisma.player.findMany(),
-    prisma.club.findMany(),
     fixtureSlug ? prisma.projection.findMany({ where: { fixtureSlug } }) : Promise.resolve([]),
     prisma.playerValuation.findMany(),
   ]);
+
+  // Only the clubs owned players actually belong to — Club grows by ~250 rows
+  // every game week as opponents get persisted (see gameweek.ts's
+  // persistOpponentClubs) and this screen, unlike the gallery, never shows an
+  // opponent, so it never needed the rest of that table.
+  const clubSlugs = [...new Set(players.map((p) => p.clubSlug).filter((s): s is string => s != null))];
+  const clubs = clubSlugs.length ? await prisma.club.findMany({ where: { slug: { in: clubSlugs } } }) : [];
 
   const playerMap = new Map(players.map((p) => [p.slug, p]));
   const clubMap = new Map(clubs.map((c) => [c.slug, c]));
@@ -223,19 +256,19 @@ export async function buildInsights(
       kind: "unavailable",
       title: "Indisponibles",
       description: "Blessés ou suspendus — à sortir de tes compos cette semaine.",
-      items: top(unavailable),
+      items: top(dedupeByPlayer(unavailable)),
     },
     {
       kind: "underused",
       title: "Valeurs sûres",
       description: "Titulaires réguliers et performants : la base de tes compos.",
-      items: top(underused),
+      items: top(dedupeByPlayer(underused)),
     },
     {
       kind: "rising",
       title: "En progression",
       description: "Forme en nette hausse sur les derniers matchs.",
-      items: top(rising),
+      items: top(dedupeByPlayer(rising)),
     },
     {
       kind: "sell_high",

@@ -12,6 +12,41 @@ export interface Opponent {
   isHome: boolean;
 }
 
+/** One match of a game week, as FIXTURE_GAMES_PUBLIC returns it. */
+type FixtureTeam = {
+  slug: string;
+  name: string | null;
+  pictureUrl: string | null;
+  domesticLeagueRanking: number | null;
+  domesticLeague: { slug: string; displayName: string } | null;
+};
+
+type FixtureGame = {
+  id: string;
+  date: string | null;
+  homeTeam: FixtureTeam | null;
+  awayTeam: FixtureTeam | null;
+};
+
+/**
+ * Whether two clubs' league positions can be compared at all. Unknown on
+ * either side counts as "no": guessing here is what produces a confident,
+ * wrong difficulty read.
+ *
+ * As close as the public API gets. `domesticLeague` is Sorare's *eligibility*
+ * competition rather than the actual table — every English club, whatever its
+ * tier, is "English League Players" — so this catches cross-border ties
+ * (a Champions League night) and not a domestic cup tie between tiers.
+ */
+export function sameCompetition(
+  a: { domesticLeague: { slug: string } | null } | null,
+  b: { domesticLeague: { slug: string } | null } | null
+): boolean {
+  const x = a?.domesticLeague?.slug;
+  const y = b?.domesticLeague?.slug;
+  return Boolean(x && y && x === y);
+}
+
 /**
  * Maps each club playing this game week to who it faces and whether at home.
  *
@@ -20,16 +55,7 @@ export interface Opponent {
  */
 export async function opponentsForFixture(fixtureSlug: string): Promise<Map<string, Opponent>> {
   const data = await publicGraphql<{
-    so5: {
-      so5Fixture: {
-        games: {
-          id: string;
-          date: string | null;
-          homeTeam: { slug: string; domesticLeagueRanking: number | null } | null;
-          awayTeam: { slug: string; domesticLeagueRanking: number | null } | null;
-        }[];
-      } | null;
-    };
+    so5: { so5Fixture: { games: FixtureGame[] } | null };
   }>(FIXTURE_GAMES_PUBLIC, { slug: fixtureSlug });
 
   const games = data?.so5?.so5Fixture?.games ?? [];
@@ -39,8 +65,15 @@ export async function opponentsForFixture(fixtureSlug: string): Promise<Map<stri
     const home = g.homeTeam;
     const away = g.awayTeam;
     if (!home?.slug || !away?.slug) continue;
-    if (!out.has(home.slug)) out.set(home.slug, { opponentRank: away.domesticLeagueRanking, isHome: true });
-    if (!out.has(away.slug)) out.set(away.slug, { opponentRank: home.domesticLeagueRanking, isHome: false });
+    // Ranks only mean something against each other inside one table, so a
+    // European tie — where "2nd" is second in another country — feeds neither
+    // the difficulty factor nor the gallery's "(12ᵉ)". See sameCompetition for
+    // what Sorare's grouping can and can't tell apart.
+    const sameLeague = sameCompetition(home, away);
+    if (!out.has(home.slug))
+      out.set(home.slug, { opponentRank: sameLeague ? away.domesticLeagueRanking : null, isHome: true });
+    if (!out.has(away.slug))
+      out.set(away.slug, { opponentRank: sameLeague ? home.domesticLeagueRanking : null, isHome: false });
   }
 
   // Kept rather than discarded: the response already carries who plays whom and
@@ -52,28 +85,80 @@ export async function opponentsForFixture(fixtureSlug: string): Promise<Map<stri
   return out;
 }
 
-async function persistGames(
-  fixtureSlug: string,
-  games: {
-    id: string;
-    date: string | null;
-    homeTeam: { slug: string; domesticLeagueRanking: number | null } | null;
-    awayTeam: { slug: string; domesticLeagueRanking: number | null } | null;
-  }[]
-): Promise<void> {
+/**
+ * Clubs seen as opponents, so the gallery can name them.
+ *
+ * Only the players' *own* clubs are ever enriched, so without this every
+ * opponent fell through `club?.name ?? opponentSlug` and the next-match line
+ * read "va à newcastle-united-newcastle-upon-tyne" on essentially every
+ * card — the fallback was the normal case, not the edge case.
+ *
+ * `competitionSlug`/`competitionName` come from the same `domesticLeague`
+ * field enrichment reads, so they're written here too — but only over a null,
+ * so a game week that happens to omit one can't blank the division filter on
+ * a club that is also one of ours.
+ */
+async function persistOpponentClubs(games: FixtureGame[]): Promise<void> {
+  const clubs = new Map<string, NonNullable<FixtureGame["homeTeam"]>>();
   for (const g of games) {
-    if (!g.id || !g.homeTeam?.slug || !g.awayTeam?.slug) continue;
-    const row = {
-      fixtureSlug,
-      date: parseDate(g.date),
-      homeClubSlug: g.homeTeam.slug,
-      awayClubSlug: g.awayTeam.slug,
-      homeRanking: g.homeTeam.domesticLeagueRanking,
-      awayRanking: g.awayTeam.domesticLeagueRanking,
-      syncedAt: new Date(),
-    };
-    await prisma.game.upsert({ where: { id: g.id }, create: { id: g.id, ...row }, update: row });
+    for (const t of [g.homeTeam, g.awayTeam]) if (t?.slug) clubs.set(t.slug, t);
   }
+  if (!clubs.size) return;
+
+  const values = [...clubs.values()].map(
+    (c) =>
+      Prisma.sql`(${c.slug}, ${c.name || c.slug}, ${c.pictureUrl || null},
+        ${c.domesticLeagueRanking ?? null}, ${c.domesticLeague?.slug ?? null},
+        ${c.domesticLeague?.displayName ?? null})`
+  );
+  await prisma.$executeRaw`
+    INSERT INTO "Club" ("slug", "name", "pictureUrl", "leagueRanking", "competitionSlug",
+                        "competitionName")
+    VALUES ${Prisma.join(values)}
+    ON CONFLICT ("slug") DO UPDATE SET
+      "name"            = EXCLUDED."name",
+      "pictureUrl"      = COALESCE(EXCLUDED."pictureUrl", "Club"."pictureUrl"),
+      "leagueRanking"   = EXCLUDED."leagueRanking",
+      "competitionSlug" = COALESCE(EXCLUDED."competitionSlug", "Club"."competitionSlug"),
+      "competitionName" = COALESCE(EXCLUDED."competitionName", "Club"."competitionName")
+  `;
+}
+
+/**
+ * One statement for the whole game week rather than an upsert per game.
+ *
+ * A game week carries ~240 matches; a round trip each against a remote
+ * Postgres is minutes of latency inside a 60s serverless invocation, and the
+ * caller swallows failures, so the timeout showed up as a silently empty
+ * next-match line rather than as an error.
+ */
+async function persistGames(fixtureSlug: string, games: FixtureGame[]): Promise<void> {
+  await persistOpponentClubs(games);
+
+  const now = new Date();
+  const rows = games
+    .filter((g) => g.id && g.homeTeam?.slug && g.awayTeam?.slug)
+    .map(
+      (g) =>
+        Prisma.sql`(${g.id}, ${fixtureSlug}, ${parseDate(g.date)}, ${g.homeTeam!.slug},
+          ${g.awayTeam!.slug}, ${g.homeTeam!.domesticLeagueRanking ?? null},
+          ${g.awayTeam!.domesticLeagueRanking ?? null}, ${now})`
+    );
+  if (!rows.length) return;
+
+  await prisma.$executeRaw`
+    INSERT INTO "Game" ("id", "fixtureSlug", "date", "homeClubSlug", "awayClubSlug",
+                        "homeRanking", "awayRanking", "syncedAt")
+    VALUES ${Prisma.join(rows)}
+    ON CONFLICT ("id") DO UPDATE SET
+      "fixtureSlug"  = EXCLUDED."fixtureSlug",
+      "date"         = EXCLUDED."date",
+      "homeClubSlug" = EXCLUDED."homeClubSlug",
+      "awayClubSlug" = EXCLUDED."awayClubSlug",
+      "homeRanking"  = EXCLUDED."homeRanking",
+      "awayRanking"  = EXCLUDED."awayRanking",
+      "syncedAt"     = EXCLUDED."syncedAt"
+  `;
 }
 
 /**

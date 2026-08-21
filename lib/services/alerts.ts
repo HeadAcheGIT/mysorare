@@ -36,9 +36,13 @@ interface TrackedPlayer {
 }
 
 async function trackedPlayers(): Promise<TrackedPlayer[]> {
-  const [cards, watchlist] = await Promise.all([
+  const [cards, watchlist, lastChecks] = await Promise.all([
     prisma.card.findMany({ select: { playerSlug: true, rarity: true, player: { select: { displayName: true } } } }),
     prisma.watchlistItem.findMany({ select: { playerSlug: true, label: true } }),
+    // When each player was last looked at. PriceSnapshot is written on every
+    // check, so it doubles as the "last seen" record and no extra column is
+    // needed to rotate the list.
+    prisma.priceSnapshot.groupBy({ by: ["playerSlug"], _max: { capturedAt: true } }),
   ]);
 
   const bySlug = new Map<string, TrackedPlayer>();
@@ -52,7 +56,15 @@ async function trackedPlayers(): Promise<TrackedPlayer[]> {
       bySlug.set(w.playerSlug, { slug: w.playerSlug, name: w.label, rarity: "limited" });
     }
   }
-  return [...bySlug.values()];
+
+  // Stalest first, never-checked before that. A run only gets through as many
+  // players as its time budget allows, and walking the list in a fixed order
+  // meant the same opening handful was re-checked every single day while the
+  // tail was never checked at all.
+  const lastSeen = new Map(lastChecks.map((r) => [r.playerSlug, r._max.capturedAt?.getTime() ?? 0]));
+  return [...bySlug.values()].sort(
+    (a, b) => (lastSeen.get(a.slug) ?? 0) - (lastSeen.get(b.slug) ?? 0) || a.slug.localeCompare(b.slug)
+  );
 }
 
 async function upsertOrClearAlert(playerSlug: string, kind: string, detail: string | null) {
@@ -125,8 +137,19 @@ export interface AlertsProgress {
 /**
  * Runs both checks for whichever tracked players are due, bounded by a time
  * budget so it fits inside the daily cron invocation alongside enrichment —
- * same staleness-first shape as enrichBatch, so an interrupted run just picks
- * up where it left off next time rather than needing a cursor.
+ * staleness-first, so an interrupted run picks up where it left off next time
+ * rather than needing a cursor.
+ *
+ * Both checks happen in the same pass over the same player. They used to be
+ * two full loops sharing one budget, and the price loop is the slow one: at
+ * the public API's unaccredited pacing it is ~3 s per player, so on a real
+ * gallery it consumed the whole 50 s and the news loop below it ran for
+ * exactly zero players. `transfer_rumor` alerts could never appear at all —
+ * measured on a 17-player gallery: priceChecked 17, newsChecked 0.
+ *
+ * Interleaving costs price coverage per run and buys the news check its
+ * existence back; the staleness ordering is what makes the reduced per-run
+ * coverage acceptable, since the players skipped today are first tomorrow.
  */
 export async function runAlerts(budgetMs: number): Promise<AlertsProgress> {
   const started = Date.now();
@@ -142,10 +165,7 @@ export async function runAlerts(budgetMs: number): Promise<AlertsProgress> {
     } catch {
       // One player's market hiccup shouldn't stop the run.
     }
-  }
 
-  for (const p of players) {
-    if (Date.now() - started > budgetMs) break;
     try {
       await checkTransferAlert(p);
       newsChecked++;

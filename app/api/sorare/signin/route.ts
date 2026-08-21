@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { signInWithPassword, completeOtp, tokenStatus, SorareAuthError } from "@/lib/sorare/auth";
+import { signInWithPassword, completeOtp, tokenStatus } from "@/lib/sorare/auth";
 import { ApiError, withErrorHandling } from "@/lib/apiHandler";
 
 export const dynamic = "force-dynamic";
@@ -22,22 +22,18 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   const body = await req.json().catch(() => null);
   if (!body) throw new ApiError("Requête invalide.");
 
-  try {
-    if (body.challenge) {
-      const otp = String(body.otp ?? "").trim();
-      if (!otp) throw new ApiError("Code à 6 chiffres requis.");
-      return NextResponse.json(await completeOtp(String(body.challenge), otp));
-    }
-
-    const email = String(body.email ?? "").trim();
-    const password = String(body.password ?? "");
-    if (!email || !password) throw new ApiError("Email et mot de passe requis.");
-
-    return NextResponse.json(await signInWithPassword(email, password));
-  } catch (err) {
-    // Credential problems are the user's to fix, not server faults — surface
-    // them as 401 with Sorare's own wording rather than a generic 500.
-    if (err instanceof SorareAuthError) throw new ApiError(err.message, 401);
-    throw err;
+  // Credential problems come back as 401 with Sorare's own wording rather than
+  // a generic 500, without a catch here: SorareAuthError is an ApiError
+  // carrying that status, and withErrorHandling renders it.
+  if (body.challenge) {
+    const otp = String(body.otp ?? "").trim();
+    if (!otp) throw new ApiError("Code à 6 chiffres requis.");
+    return NextResponse.json(await completeOtp(String(body.challenge), otp));
   }
+
+  const email = String(body.email ?? "").trim();
+  const password = String(body.password ?? "");
+  if (!email || !password) throw new ApiError("Email et mot de passe requis.");
+
+  return NextResponse.json(await signInWithPassword(email, password));
 });

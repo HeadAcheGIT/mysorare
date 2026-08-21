@@ -1,7 +1,10 @@
 /**
- * Line-up optimiser: picks the squad that maximises projected score under
- * one competition's rules. Rules live in lib/services/rules.ts as data, not
- * code, because Sorare re-tunes them most seasons.
+ * Line-up optimiser: picks the squad that maximises projected score under one
+ * `Rules` shape. Its only caller is lib/services/divisionLineup.ts, which
+ * hands it Sorare's own eligible bench for a real division (`SO5_SHAPE`,
+ * defined there) — an earlier version of this file took its `Rules` from a
+ * hand-written `lib/services/rules.ts`, guessing at competitions that might
+ * not exist on the account; see DivisionBoard.tsx for why that was dropped.
  */
 // @ts-ignore — no published types for javascript-lp-solver
 import solver from "javascript-lp-solver";

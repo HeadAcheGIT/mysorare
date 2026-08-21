@@ -14,15 +14,15 @@ import { alignedLineupComparison, type ComparisonRow } from "./alignedLineups";
  * assumed.
  *
  * Before this, "which competitions can I play" was four entries typed by hand
- * into lib/services/rules.ts, with a comment admitting they were starting
- * points rather than fact. That can't reflect a real account: divisions,
- * eligibility and rewards are per-account and change every game week. This
- * reads `so5Fixture.mySo5LeagueTracks` — Sorare's own answer — and stores it
- * so the Compo tab shows the divisions actually open to you, which team sits
- * in which division, and exactly what each one is short of.
+ * into a since-deleted lib/services/rules.ts, with a comment admitting they
+ * were starting points rather than fact. That can't reflect a real account:
+ * divisions, eligibility and rewards are per-account and change every game
+ * week. This reads `so5Fixture.mySo5LeagueTracks` — Sorare's own answer — and
+ * stores it so the Compo tab shows the divisions actually open to you, which
+ * team sits in which division, and exactly what each one is short of.
  *
- * rules.ts is still what drives the optimiser's constraints; this module owns
- * the structure it hangs off.
+ * The optimiser's constraints now come from `SO5_SHAPE` in divisionLineup.ts,
+ * not from rules.ts — this module owns the structure that feeds it.
  */
 
 type ValidityNode = {

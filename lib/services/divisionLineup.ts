@@ -9,13 +9,14 @@ import { optimise, type Candidate, type Rules } from "./optimizer";
  * Everything here hangs off Sorare's own compose bench (`myBench`), which is
  * the list of cards from this gallery that are actually eligible for that
  * division. That matters: the previous approach filtered the whole gallery
- * against four hand-written competitions in lib/services/rules.ts, so a
- * "possible line-up" was a guess about a competition that might not even
+ * against four hand-written competitions in a since-deleted lib/services/rules.ts,
+ * so a "possible line-up" was a guess about a competition that might not even
  * exist on the account.
  *
  * Validity is likewise not re-derived: `previewSo5Lineup` returns Sorare's own
- * rule-by-rule verdict on a proposed line-up. rules.ts survives only as the
- * shape fed to the LP solver (five cards, one per position, a captain).
+ * rule-by-rule verdict on a proposed line-up. `SO5_SHAPE` below is only ever
+ * a generic five-card shape fed to the LP solver — it no longer comes from
+ * rules.ts, which had no other caller left once this module stopped needing it.
  */
 
 export interface BenchCard {

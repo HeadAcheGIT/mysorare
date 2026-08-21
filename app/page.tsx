@@ -131,6 +131,16 @@ export default function Page() {
   const [squad, setSquad] = useState<SquadCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * True only when the initial squad fetch itself failed — a network or
+   * database problem — as opposed to succeeding with zero cards. Both used to
+   * render the identical "Aucune donnée, importe ta galerie" prompt, which
+   * told a manager with 400 cards to "get started" when the real story was
+   * "the database is unreachable" (see humanMessage in lib/apiHandler.ts,
+   * which already has a specific message for that case — this is what lets
+   * the UI show it instead of burying it under an unrelated CTA).
+   */
+  const [squadLoadFailed, setSquadLoadFailed] = useState(false);
   const [selected, setSelected] = useState<SquadCard | null>(null);
   const [popupSlug, setPopupSlug] = useState<string | null>(null);
   const [popupExtra, setPopupExtra] = useState<ReactNode>(null);
@@ -419,8 +429,10 @@ export default function Page() {
       const data = await apiFetch<SquadResponse>("/api/squad");
       setFixture(data.fixture);
       setSquad(data.cards);
+      setSquadLoadFailed(false);
     } catch (err) {
       setError(msg(err));
+      setSquadLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -875,7 +887,15 @@ export default function Page() {
             {gameWeek && <Deadline gw={gameWeek} />}
             <DataHealth unenriched={unenriched} onDone={refreshAll} />
 
-            {squad.length === 0 ? (
+            {squad.length === 0 && squadLoadFailed ? (
+              <div className="text-center py-4">
+                <p className="font-display text-xl uppercase mb-1 text-warn">Galerie indisponible</p>
+                <p className="text-sm text-muted">
+                  Impossible de vérifier tes cartes pour l&apos;instant — voir le message d&apos;erreur ci-dessus.
+                  Rien n&apos;indique que ta galerie est vide.
+                </p>
+              </div>
+            ) : squad.length === 0 ? (
               <div className="space-y-4">
                 <div className="text-center py-4">
                   <p className="font-display text-xl uppercase mb-1">Aucune donnée</p>
@@ -913,6 +933,14 @@ export default function Page() {
           <section aria-label="Ma galerie">
             {loading ? (
               <p className="font-mono text-sm text-muted">Chargement…</p>
+            ) : squad.length === 0 && squadLoadFailed ? (
+              <div className="text-center py-6">
+                <p className="font-display text-xl uppercase mb-1 text-warn">Galerie indisponible</p>
+                <p className="text-sm text-muted">
+                  Impossible de vérifier tes cartes pour l&apos;instant — voir le message d&apos;erreur ci-dessus.
+                  Rien n&apos;indique que ta galerie est vide.
+                </p>
+              </div>
             ) : squad.length === 0 ? (
               <div className="space-y-4">
                 <div className="text-center py-6">

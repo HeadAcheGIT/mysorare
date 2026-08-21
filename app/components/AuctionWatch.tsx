@@ -62,6 +62,20 @@ function countdown(minutes: number | null): string {
  * row is shown against what those cards actually trade at, and ordered by the
  * only thing that makes one urgent: a good price with little time left.
  */
+/**
+ * Survives this component's own remounts, not page reloads.
+ *
+ * The Marché tab is conditionally rendered (`{tab === "market" && ...}`), so
+ * switching tabs and back unmounts and remounts this component — and an
+ * effect-on-mount auto-load fired the whole paced scan (~20s unkeyed, one
+ * auction page every few seconds) on every single visit to the tab, not just
+ * the first. Caching the last result at module scope means only the first
+ * visit in a session pays that cost; every later one shows what's already
+ * known and waits for an explicit "Rafraîchir".
+ */
+let cachedResult: Result | null = null;
+let cachedAt: Date | null = null;
+
 export default function AuctionWatch({
   onSelectPlayer,
   onError,
@@ -69,15 +83,19 @@ export default function AuctionWatch({
   onSelectPlayer: (slug: string) => void;
   onError: (message: string) => void;
 }) {
-  const [data, setData] = useState<Result | null>(null);
+  const [data, setData] = useState<Result | null>(cachedResult);
   const [loading, setLoading] = useState(false);
-  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+  const [checkedAt, setCheckedAt] = useState<Date | null>(cachedAt);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await apiFetch<Result>("/api/auctions"));
-      setCheckedAt(new Date());
+      const result = await apiFetch<Result>("/api/auctions");
+      const now = new Date();
+      setData(result);
+      setCheckedAt(now);
+      cachedResult = result;
+      cachedAt = now;
     } catch (err) {
       onError(msg(err));
     } finally {
@@ -86,8 +104,12 @@ export default function AuctionWatch({
   }, [onError]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!cachedResult) load();
+    // Deliberately not depending on `load` (an intentional exception to the
+    // hook's exhaustive-deps rule): this must run once per first mount, not
+    // every time `onError` gives `load` a new identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // A countdown that doesn't move is misleading, so the view re-renders each
   // minute off the timestamps already fetched — no extra requests.

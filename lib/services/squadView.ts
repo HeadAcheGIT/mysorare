@@ -37,11 +37,10 @@ export async function getSquadView(
 ): Promise<{ fixture: string | null; cards: SquadCard[] }> {
   const resolvedFixture = fixture ?? (await currentFixture());
 
-  const [cards, players, clubs, projections, overrides, lastAppearances, valuations, games] =
+  const [cards, players, projections, overrides, lastAppearances, valuations, games] =
     await Promise.all([
     prisma.card.findMany(rarity ? { where: { rarity } } : undefined),
     prisma.player.findMany(),
-    prisma.club.findMany(),
     resolvedFixture ? prisma.projection.findMany({ where: { fixtureSlug: resolvedFixture } }) : Promise.resolve([]),
     resolvedFixture ? prisma.override.findMany({ where: { fixtureSlug: resolvedFixture } }) : Promise.resolve([]),
     // Most recent appearance per player where they actually got on the pitch.
@@ -71,6 +70,22 @@ export async function getSquadView(
       : Promise.resolve([]),
   ]);
 
+  // Only the clubs this view can actually reference: every player's own club,
+  // plus every club playing this game week (an opponent is very often not a
+  // club any owned player belongs to). `Club` grows by ~250 rows a game week
+  // as opponents get persisted (see gameweek.ts's persistOpponentClubs) and
+  // never shrinks, so `findMany()` here used to pull the entire, ever-growing
+  // table on every gallery and insights load for a handful actually shown.
+  const neededClubSlugs = new Set<string>();
+  for (const p of players) if (p.clubSlug) neededClubSlugs.add(p.clubSlug);
+  for (const g of games) {
+    neededClubSlugs.add(g.homeClubSlug);
+    neededClubSlugs.add(g.awayClubSlug);
+  }
+  const clubs = neededClubSlugs.size
+    ? await prisma.club.findMany({ where: { slug: { in: [...neededClubSlugs] } } })
+    : [];
+
   const playerMap = new Map(players.map((p) => [p.slug, p]));
   const clubMap = new Map(clubs.map((c) => [c.slug, c]));
   const projMap = new Map(projections.map((p) => [p.playerSlug, p]));
@@ -96,6 +111,16 @@ export async function getSquadView(
     const opponentOf = (clubSlug: string, opponentSlug: string, rank: number | null, isHome: boolean) => {
       if (nextGameByClub.has(clubSlug)) return;
       const club = clubMap.get(opponentSlug);
+      const own = clubMap.get(clubSlug);
+      // A position only reads as "hard match" within one table, so a European
+      // tie — Ligue 1 rank against a Bundesliga rank — gets no number at all.
+      //
+      // Known limit: Sorare's `domesticLeague` is the *eligibility* competition,
+      // not the table. Every English club shares "English League Players", so a
+      // cup tie against a Championship side still shows that side's own-tier
+      // position. The public API exposes nothing finer to separate them.
+      const comparable =
+        own?.competitionSlug != null && club?.competitionSlug === own.competitionSlug;
       nextGameByClub.set(clubSlug, {
         date: g.date?.toISOString() ?? null,
         opponentSlug,
@@ -104,7 +129,7 @@ export async function getSquadView(
         opponentName: club?.name ?? opponentSlug,
         opponentPicture: club?.pictureUrl ?? null,
         isHome,
-        opponentRank: rank,
+        opponentRank: comparable ? rank : null,
       });
     };
     opponentOf(g.homeClubSlug, g.awayClubSlug, g.awayRanking, true);

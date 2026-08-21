@@ -1,14 +1,19 @@
 "use client";
 
-import type { SquadCard } from "@/lib/types";
+import { cardValue, type SquadCard } from "@/lib/types";
 
 /**
- * Portfolio header. Uses floor price rather than the listed price for the
- * total: floor is what the market will actually pay right now, so it reads as
- * a conservative valuation rather than an optimistic one.
+ * Portfolio header.
+ *
+ * Totals on `cardValue` — completed sales first, then the CSV price, then the
+ * floor — which is the same figure every card, insight and report on the
+ * screen below already shows. Summing the CSV floor instead, as this did, is
+ * an any-season number: it priced an in-season card at what an old season's
+ * copy fetches, and the header ended up contradicting the very list under it
+ * (1 900 € and −102 € against 4 805 € and +2 804 € on the same gallery).
  */
 export default function GallerySummary({ cards }: { cards: SquadCard[] }) {
-  const value = cards.reduce((sum, c) => sum + (c.floorPrice ?? 0), 0);
+  const value = cards.reduce((sum, c) => sum + (cardValue(c) ?? 0), 0);
   const spent = cards.reduce((sum, c) => sum + (c.boughtPrice ?? 0), 0);
   const delta = spent > 0 ? value - spent : null;
   const unavailable = cards.filter((c) => c.injury || c.suspended).length;

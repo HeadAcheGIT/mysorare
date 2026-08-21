@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/apiFetch";
+import { ordinalFr } from "@/lib/format";
 
 type GameWeekResult = {
   fixtureSlug: string;
@@ -126,7 +127,7 @@ export default function SeasonReport({ onError }: { onError: (message: string) =
               {data.lineupsPlayed} compo{data.lineupsPlayed > 1 ? "s" : ""} sur {data.gameWeeks.length} game
               week{data.gameWeeks.length > 1 ? "s" : ""}
               {data.bestRanking &&
-                ` · meilleur classement ${data.bestRanking.ranking}ᵉ (${data.bestRanking.leaderboardName})`}
+                ` · meilleur classement ${ordinalFr(data.bestRanking.ranking)} (${data.bestRanking.leaderboardName})`}
             </p>
           </div>
 
@@ -148,7 +149,7 @@ export default function SeasonReport({ onError }: { onError: (message: string) =
                     <li key={i} className="font-mono text-[11px] text-muted flex justify-between gap-2">
                       <span className="truncate">{e.leaderboardName}</span>
                       <span className="shrink-0">
-                        {e.ranking != null ? `${e.ranking}ᵉ` : "—"}
+                        {e.ranking != null ? ordinalFr(e.ranking) : "—"}
                         {e.score != null && ` · ${e.score.toFixed(0)} pts`}
                         {e.rewardEur ? ` · ${eur(e.rewardEur)}` : ""}
                       </span>

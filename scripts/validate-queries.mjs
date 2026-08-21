@@ -74,6 +74,24 @@ function extractQueries(src) {
  */
 const VARS_BY_QUERY = {
   LIVE_AUCTIONS_PUBLIC: { first: 12 },
+  // Complexity scales with the length of $slugs, not with whether the slugs
+  // resolve to real records, so a placeholder repeated to the right count
+  // proves the same thing as real data would. Sized to the *keyless* batch
+  // constants in lib/sorare/publicClient.ts (PLAYERS_PER_QUERY,
+  // CARDS_PER_OWNERSHIP_QUERY) — this script always runs unauthenticated, and
+  // those are the sizes that actually ship on the app's documented default
+  // path.
+  //
+  // This is exactly the check that would have caught both real outages
+  // before they shipped: the generic single-slug $slugs placeholder these
+  // queries used before proved nothing about a real batch. Measured against
+  // the live API, a 15-player PLAYERS_BY_SLUG batch scores 586 and a
+  // 10-card CARD_OWNERSHIP_PUBLIC batch scores 721 — both rejected — and
+  // neither failed here until a real sync ran in production. If a batch
+  // constant changes, update the count here to match — a mismatch defeats
+  // the whole point of the check.
+  PLAYERS_BY_SLUG: { slugs: Array(10).fill("erling-haland") },
+  CARD_OWNERSHIP_PUBLIC: { slugs: Array(5).fill("erling-haland-2024-limited-1") },
 };
 
 function varsFor(body, name) {
