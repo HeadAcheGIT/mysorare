@@ -3,6 +3,29 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-22 (suite 2) — Recherche joueur accessible depuis n'importe quel onglet
+
+La galerie avait déjà un champ de recherche (`lib/gallerySearch.ts`, tolérant
+aux accents et multi-mots), mais coincé dans l'onglet Galerie : impossible de
+chercher un nom en regardant Semaine ou Compo sans changer d'onglet et perdre
+les filtres en cours.
+
+Icône loupe dans le header (raccourci clavier `/` en bonus, pratique au
+clavier) qui ouvre un overlay de recherche global. Deux sources, dans
+l'ordre : d'abord la galerie déjà chargée en mémoire (résultats instants,
+zéro requête, `matchesSearch` réutilisé tel quel), puis — dès 2 caractères,
+avec un debounce de 300 ms — l'API publique de recherche joueur déjà
+utilisée par l'onglet Marché, pour couvrir aussi les joueurs pas encore
+possédés. Les joueurs déjà affichés côté galerie sont exclus des résultats
+marché, pour ne pas doubler la même personne dans les deux sections.
+
+Un clic sur un résultat rouvre le même `openPlayer()` qu'ailleurs dans
+l'app (fiche riche si la carte est possédée, popup générique sinon) — pas de
+nouveau composant de fiche joueur à maintenir. Un lien "Voir tout dans la
+Galerie" reporte la requête dans le filtre existant de l'onglet Galerie, pour
+les cas où la liste complète (tri, filtres poste/rareté) est plus utile que
+les huit premiers résultats de l'aperçu rapide.
+
 ## 2026-08-22 (suite) — Mercato : filtrer par motif plutôt que tout scroller
 
 Le premier jet listait tout, sans distinction — utilisable sur une petite

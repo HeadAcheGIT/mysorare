@@ -82,3 +82,12 @@ export function DataIcon() {
     </svg>
   );
 }
+
+export function SearchIcon() {
+  return (
+    <svg {...common}>
+      <circle cx="8.8" cy="8.8" r="5.3" />
+      <path d="M17 17l-4.2-4.2" />
+    </svg>
+  );
+}

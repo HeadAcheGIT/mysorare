@@ -10,7 +10,8 @@ import AlertBadges, { type PlayerAlert } from "./components/AlertBadges";
 import MercatoBoard from "./components/MercatoBoard";
 import { buildMercatoLists } from "@/lib/mercatoBoard";
 import type { MercatoSignalRow } from "@/lib/services/mercato";
-import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, MercatoIcon, HistoryIcon, DataIcon } from "./components/NavIcons";
+import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, MercatoIcon, HistoryIcon, DataIcon, SearchIcon } from "./components/NavIcons";
+import GlobalSearch from "./components/GlobalSearch";
 import PlayerSheet from "./components/PlayerSheet";
 import GalleryFilters, { type SortKey, type SortDirection, type DivisionOption, DEFAULT_DIRECTION } from "./components/GalleryFilters";
 import SortControl from "./components/SortControl";
@@ -151,6 +152,7 @@ export default function Page() {
   const [selected, setSelected] = useState<SquadCard | null>(null);
   const [popupSlug, setPopupSlug] = useState<string | null>(null);
   const [popupExtra, setPopupExtra] = useState<ReactNode>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   /**
    * Single entry point for "a player was clicked", used everywhere a name
@@ -173,6 +175,21 @@ export default function Page() {
     },
     [squad]
   );
+
+  // "/" opens global search from anywhere, unless a field is already
+  // capturing keystrokes (typing a literal "/" into a filter shouldn't
+  // hijack focus).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "/" || searchOpen) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      e.preventDefault();
+      setSearchOpen(true);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [searchOpen]);
 
   // Gallery controls
   const [search, setSearch] = useState("");
@@ -886,7 +903,7 @@ export default function Page() {
       <header className="sticky top-0 z-20 bg-ink2/95 backdrop-blur border-b border-line px-4 py-3">
         <div className="max-w-3xl mx-auto flex items-center gap-3">
           <span className="w-2 h-8 rounded-sm bg-gradient-to-b from-flood to-transparent shrink-0" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="font-display uppercase text-2xl leading-none tracking-wide">Cockpit</h1>
             <p className="font-mono text-xs text-muted truncate">
               {squad.length
@@ -894,6 +911,13 @@ export default function Page() {
                 : "Galerie vide — importe ton CSV"}
             </p>
           </div>
+          <button
+            onClick={() => setSearchOpen(true)}
+            aria-label="Rechercher un joueur"
+            className="shrink-0 w-9 h-9 grid place-items-center rounded-md border border-line text-muted"
+          >
+            <SearchIcon />
+          </button>
         </div>
       </header>
 
@@ -1624,6 +1648,18 @@ export default function Page() {
         )}
       </main>
 
+      {searchOpen && (
+        <GlobalSearch
+          squad={squad}
+          onSelectPlayer={openPlayer}
+          onOpenGallery={(q) => {
+            setSearch(q);
+            setTab("gallery");
+            setSearchOpen(false);
+          }}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
       {selected && <PlayerSheet card={selected} onClose={() => setSelected(null)} />}
       {popupSlug && (
         <PlayerPopup
