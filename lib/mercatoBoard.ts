@@ -26,6 +26,21 @@ export interface MercatoReason {
   weight: number;
 }
 
+/**
+ * One icon + label per reason category, shared between how a reason renders
+ * on a player's row and how its filter chip renders — so the two can't drift
+ * apart. Transfer alerts still show their own stage-specific icon on the row
+ * itself (👀/🗣️/🤝/🏥/✅, see transferReason below); this generic one is only
+ * for the category-level filter chip.
+ */
+export const REASON_META: Record<MercatoReasonCode, { icon: string; label: string }> = {
+  transfer: { icon: "🔁", label: "Transfert en cours" },
+  start_down: { icon: "📉", label: "Moins titulaire" },
+  start_up: { icon: "📈", label: "Plus titulaire" },
+  form_up: { icon: "⤴️", label: "Forme en hausse" },
+  league_uncovered: { icon: "🌍", label: "Championnat non couvert" },
+};
+
 export interface MercatoItem {
   card: SquadCard;
   reasons: MercatoReason[];
@@ -85,7 +100,7 @@ export function buildMercatoLists(
     if (signal?.startTrend?.direction === "down") {
       riskReasons.push({
         code: "start_down",
-        label: "📉 Moins titulaire",
+        label: `${REASON_META.start_down.icon} ${REASON_META.start_down.label}`,
         detail: `${signal.startTrend.priorPct}% → ${signal.startTrend.recentPct}% de titularisation, selon notre modèle`,
         weight: signal.startTrend.delta * 100,
       });
@@ -93,7 +108,7 @@ export function buildMercatoLists(
     if (signal?.startTrend?.direction === "up") {
       oppReasons.push({
         code: "start_up",
-        label: "📈 Plus titulaire",
+        label: `${REASON_META.start_up.icon} ${REASON_META.start_up.label}`,
         detail: `${signal.startTrend.priorPct}% → ${signal.startTrend.recentPct}% de titularisation, selon notre modèle`,
         weight: signal.startTrend.delta * 100,
       });
@@ -101,7 +116,7 @@ export function buildMercatoLists(
     if (signal?.formTrend) {
       oppReasons.push({
         code: "form_up",
-        label: "⤴️ Forme en hausse",
+        label: `${REASON_META.form_up.icon} ${REASON_META.form_up.label}`,
         detail: `+${signal.formTrend.delta} pts sur les derniers matchs`,
         weight: signal.formTrend.delta,
       });
@@ -117,7 +132,7 @@ export function buildMercatoLists(
     ) {
       riskReasons.push({
         code: "league_uncovered",
-        label: "🌍 Championnat non couvert",
+        label: `${REASON_META.league_uncovered.icon} ${REASON_META.league_uncovered.label}`,
         detail: `${card.competitionName ?? card.competitionSlug} — hors du scouting marché Cockpit`,
         weight: 15,
       });
@@ -144,4 +159,28 @@ export function buildMercatoLists(
   risks.sort((a, b) => b.score - a.score);
   opportunities.sort((a, b) => b.score - a.score);
   return { risks, opportunities };
+}
+
+/**
+ * Narrows a list to the players carrying at least one of the selected reason
+ * codes — OR, not AND: "moins titulaire" and "championnat non couvert" both
+ * ticked shows either, since they're two independent ways a card can be
+ * worth flagging, not two conditions the same card must both meet.
+ *
+ * An empty selection means no filter at all, matching how the chips render:
+ * nothing ticked reads as "show everything", not "show nothing".
+ */
+export function filterByReason(items: MercatoItem[], codes: ReadonlySet<MercatoReasonCode>): MercatoItem[] {
+  if (codes.size === 0) return items;
+  return items.filter((item) => item.reasons.some((r) => codes.has(r.code)));
+}
+
+/** How many players (not reasons — a code counts once per player) carry each reason, for the filter chips. */
+export function countByReason(items: MercatoItem[]): Partial<Record<MercatoReasonCode, number>> {
+  const counts: Partial<Record<MercatoReasonCode, number>> = {};
+  for (const item of items) {
+    const codes = new Set(item.reasons.map((r) => r.code));
+    for (const code of codes) counts[code] = (counts[code] ?? 0) + 1;
+  }
+  return counts;
 }

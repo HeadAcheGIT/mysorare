@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildMercatoLists } from "./mercatoBoard";
+import { buildMercatoLists, filterByReason, countByReason } from "./mercatoBoard";
 import type { SquadCard } from "./types";
 import type { PlayerAlert } from "@/app/components/AlertBadges";
 import type { MercatoSignalRow } from "./services/mercato";
@@ -141,5 +141,51 @@ describe("buildMercatoLists", () => {
     const { risks, opportunities } = buildMercatoLists(squad, {}, new Set(["ligue-1"]), {});
     expect(risks).toHaveLength(0);
     expect(opportunities).toHaveLength(0);
+  });
+});
+
+describe("filterByReason", () => {
+  const squad = [
+    card({ playerSlug: "down", competitionSlug: "ligue-1" }),
+    card({ playerSlug: "uncovered", competitionSlug: "obscure-league" }),
+  ];
+  const signals: Record<string, MercatoSignalRow> = {
+    down: { startTrend: { direction: "down", recentPct: 10, priorPct: 80, delta: -0.7 }, formTrend: null },
+  };
+  const { risks } = buildMercatoLists(squad, {}, new Set(["ligue-1"]), signals);
+
+  it("returns everything untouched when no codes are selected", () => {
+    expect(filterByReason(risks, new Set())).toHaveLength(2);
+  });
+
+  it("narrows to only the players carrying a selected code", () => {
+    const out = filterByReason(risks, new Set(["start_down"]));
+    expect(out.map((i) => i.card.playerSlug)).toEqual(["down"]);
+  });
+
+  it("is OR across multiple selected codes, not AND", () => {
+    const out = filterByReason(risks, new Set(["start_down", "league_uncovered"]));
+    expect(out.map((i) => i.card.playerSlug).sort()).toEqual(["down", "uncovered"]);
+  });
+
+  it("returns nothing for a code that matches no one", () => {
+    expect(filterByReason(risks, new Set(["form_up"]))).toHaveLength(0);
+  });
+});
+
+describe("countByReason", () => {
+  it("counts one per player per code, not per reason occurrence", () => {
+    const squad = [card({ playerSlug: "a" }), card({ playerSlug: "b" })];
+    const { risks } = buildMercatoLists(
+      squad,
+      { a: [transferAlert("contact")], b: [transferAlert("official")] },
+      new Set(["ligue-1"]),
+      {}
+    );
+    expect(countByReason(risks)).toEqual({ transfer: 2 });
+  });
+
+  it("returns an empty object for an empty list", () => {
+    expect(countByReason([])).toEqual({});
   });
 });

@@ -3,6 +3,37 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-22 (suite) — Mercato : filtrer par motif plutôt que tout scroller
+
+Le premier jet listait tout, sans distinction — utilisable sur une petite
+galerie, mais une galerie fournie avec plusieurs joueurs marqués finit en
+long défilement où le seul motif qui intéresse (« championnat non couvert »,
+par exemple) est noyé dans le reste.
+
+Des puces de filtre, une par motif (🔁 transfert, 📉/📈 titularisation,
+⤴️ forme, 🌍 championnat), chacune avec son compte et togglable — plusieurs
+motifs sélectionnés à la fois se combinent en OU, pas en ET : cocher
+« moins titulaire » et « championnat non couvert » montre l'un ou l'autre,
+pas seulement les joueurs qui cumulent les deux. Une puce n'apparaît que si
+au moins un joueur la déclenche aujourd'hui, même logique que le reste de
+l'onglet — jamais un filtre mort à l'écran.
+
+Piège évité : les compteurs sur les puces sont calculés **avant** filtrage,
+depuis les listes complètes. Les recalculer après un premier filtre les
+aurait fait fondre à mesure qu'on sélectionne, rendant les puces déjà
+cochées impossibles à décocher en confiance (leur propre compte aurait
+menti).
+
+Les deux sections (risques / bonnes nouvelles) se replient maintenant
+indépendamment — repris du comportement de l'ancien encart mercato de
+Semaine, perdu en route lors du passage à l'onglet dédié. Chaque section
+garde son compte visible même repliée, pour ne pas perdre le repère "combien
+il y en a" en gagnant de la place.
+
+`filterByReason` et `countByReason` (`lib/mercatoBoard.ts`) sont pures et
+testées isolément plutôt qu'enfouies dans le composant — même logique que le
+reste du fichier.
+
 ## 2026-08-22 — Onglet Mercato : le rumeur ne dit pas si c'est bon ou mauvais pour toi
 
 L'encart mercato de l'onglet Semaine listait déjà les rumeurs de transfert,
