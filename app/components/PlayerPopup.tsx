@@ -46,10 +46,14 @@ export default function PlayerPopup({
   slug,
   onClose,
   extra,
+  compared,
+  onToggleCompare,
 }: {
   slug: string;
   onClose: () => void;
   extra?: ReactNode;
+  compared?: boolean;
+  onToggleCompare?: () => void;
 }) {
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
   const [market, setMarket] = useState<MarketFloor | null>(null);
@@ -137,13 +141,27 @@ export default function PlayerPopup({
                   <PlayerBadges birthDate={detail.birthDate} competitionName={detail.competitionName} />
                 </p>
               </div>
-              <button
-                onClick={onClose}
-                aria-label="Fermer"
-                className="shrink-0 w-8 h-8 grid place-items-center rounded-md border border-line text-muted"
-              >
-                ✕
-              </button>
+              <div className="shrink-0 flex flex-col gap-1.5">
+                {onToggleCompare && (
+                  <button
+                    onClick={onToggleCompare}
+                    aria-pressed={compared}
+                    aria-label={compared ? "Retirer du comparateur" : "Ajouter au comparateur"}
+                    className={`w-8 h-8 grid place-items-center rounded-md border text-sm font-bold ${
+                      compared ? "bg-flood text-ink border-flood" : "border-line text-muted"
+                    }`}
+                  >
+                    {compared ? "✓" : "+"}
+                  </button>
+                )}
+                <button
+                  onClick={onClose}
+                  aria-label="Fermer"
+                  className="w-8 h-8 grid place-items-center rounded-md border border-line text-muted"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             <div className="p-4 space-y-4">

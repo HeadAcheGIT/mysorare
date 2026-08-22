@@ -21,11 +21,15 @@ export default function GlobalSearch({
   squad,
   onSelectPlayer,
   onOpenGallery,
+  compareSlugs,
+  onToggleCompare,
   onClose,
 }: {
   squad: SquadCard[];
   onSelectPlayer: (slug: string) => void;
   onOpenGallery: (query: string) => void;
+  compareSlugs: string[];
+  onToggleCompare: (slug: string) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -141,11 +145,11 @@ export default function GlobalSearch({
                   </p>
                   <ul>
                     {ownedMatches.map((c) => (
-                      <li key={c.playerSlug}>
+                      <li key={c.playerSlug} className="flex items-center gap-1 pr-2">
                         <button
                           type="button"
                           onClick={() => pick(c.playerSlug)}
-                          className="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-ink"
+                          className="flex-1 min-w-0 flex items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-ink"
                         >
                           <span className="min-w-0">
                             <span className="block font-bold truncate">{c.name}</span>
@@ -158,6 +162,10 @@ export default function GlobalSearch({
                             {POSITION_SHORT[c.position] ?? c.position}
                           </span>
                         </button>
+                        <CompareToggle
+                          active={compareSlugs.includes(c.playerSlug)}
+                          onClick={() => onToggleCompare(c.playerSlug)}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -174,11 +182,11 @@ export default function GlobalSearch({
                   ) : (
                     <ul>
                       {marketOnly.map((p) => (
-                        <li key={p.slug}>
+                        <li key={p.slug} className="flex items-center gap-1 pr-2">
                           <button
                             type="button"
                             onClick={() => pick(p.slug)}
-                            className="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-ink"
+                            className="flex-1 min-w-0 flex items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-ink"
                           >
                             <span className="min-w-0">
                               <span className="block font-bold truncate">{p.name}</span>
@@ -191,6 +199,10 @@ export default function GlobalSearch({
                               {POSITION_SHORT[p.position] ?? p.position}
                             </span>
                           </button>
+                          <CompareToggle
+                            active={compareSlugs.includes(p.slug)}
+                            onClick={() => onToggleCompare(p.slug)}
+                          />
                         </li>
                       ))}
                     </ul>
@@ -216,5 +228,22 @@ export default function GlobalSearch({
         </div>
       </div>
     </div>
+  );
+}
+
+/** Add/remove a result from the comparator tray, separate from the row's own click-to-open. */
+function CompareToggle({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={active ? "Retirer du comparateur" : "Ajouter au comparateur"}
+      className={`shrink-0 w-7 h-7 grid place-items-center rounded-md border text-sm font-bold ${
+        active ? "bg-flood text-ink border-flood" : "border-line text-muted"
+      }`}
+    >
+      {active ? "✓" : "+"}
+    </button>
   );
 }

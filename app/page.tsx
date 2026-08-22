@@ -12,6 +12,7 @@ import { buildMercatoLists } from "@/lib/mercatoBoard";
 import type { MercatoSignalRow } from "@/lib/services/mercato";
 import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, MercatoIcon, HistoryIcon, DataIcon, SearchIcon } from "./components/NavIcons";
 import GlobalSearch from "./components/GlobalSearch";
+import PlayerCompare from "./components/PlayerCompare";
 import PlayerSheet from "./components/PlayerSheet";
 import GalleryFilters, { type SortKey, type SortDirection, type DivisionOption, DEFAULT_DIRECTION } from "./components/GalleryFilters";
 import SortControl from "./components/SortControl";
@@ -153,6 +154,15 @@ export default function Page() {
   const [popupSlug, setPopupSlug] = useState<string | null>(null);
   const [popupExtra, setPopupExtra] = useState<ReactNode>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [compareSlugs, setCompareSlugs] = useState<string[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
+
+  /** Toggle a player in/out of the comparator tray, capped at 4 — a fifth column stops being readable. */
+  const toggleCompare = useCallback((slug: string) => {
+    setCompareSlugs((prev) =>
+      prev.includes(slug) ? prev.filter((s) => s !== slug) : prev.length >= 4 ? prev : [...prev, slug]
+    );
+  }, []);
 
   /**
    * Single entry point for "a player was clicked", used everywhere a name
@@ -1674,14 +1684,42 @@ export default function Page() {
             setTab("gallery");
             setSearchOpen(false);
           }}
+          compareSlugs={compareSlugs}
+          onToggleCompare={toggleCompare}
           onClose={() => setSearchOpen(false)}
         />
       )}
-      {selected && <PlayerSheet card={selected} onClose={() => setSelected(null)} />}
+      {compareOpen && (
+        <PlayerCompare
+          slugs={compareSlugs}
+          squad={squad}
+          onSelectPlayer={openPlayer}
+          onRemove={toggleCompare}
+          onClose={() => setCompareOpen(false)}
+        />
+      )}
+      {!searchOpen && !compareOpen && compareSlugs.length >= 2 && (
+        <button
+          onClick={() => setCompareOpen(true)}
+          className="fixed bottom-[72px] right-4 z-40 bg-flood text-ink font-display uppercase text-xs font-bold px-4 py-2 rounded-full shadow-lg safe-bottom"
+        >
+          Comparer ({compareSlugs.length})
+        </button>
+      )}
+      {selected && (
+        <PlayerSheet
+          card={selected}
+          onClose={() => setSelected(null)}
+          compared={compareSlugs.includes(selected.playerSlug)}
+          onToggleCompare={() => toggleCompare(selected.playerSlug)}
+        />
+      )}
       {popupSlug && (
         <PlayerPopup
           slug={popupSlug}
           extra={popupExtra}
+          compared={compareSlugs.includes(popupSlug)}
+          onToggleCompare={() => toggleCompare(popupSlug)}
           onClose={() => {
             setPopupSlug(null);
             setPopupExtra(null);

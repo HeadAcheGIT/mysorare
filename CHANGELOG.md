@@ -3,6 +3,30 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-22 (suite 6) — Comparateur de joueurs côte à côte
+
+Deux à quatre joueurs, à comparer d'un coup d'œil plutôt qu'en ouvrant leur
+fiche l'une après l'autre en se souvenant des chiffres au fur et à mesure.
+Ajout au comparateur depuis trois endroits : chaque résultat de la recherche
+globale (bouton "+" séparé du clic principal, qui continue d'ouvrir la
+fiche), et l'en-tête de `PlayerPopup`/`PlayerSheet`. Un chip flottant
+"Comparer (n)" apparaît dès 2 sélections.
+
+Deux sources de données selon que le joueur est possédé ou non — même logique
+que `openPlayer()` ailleurs dans l'app. Une carte possédée s'affiche
+instantanément depuis la galerie déjà en mémoire (aucune requête), pendant
+qu'un joueur non possédé est chargé comme dans `PlayerPopup` (détail +
+marché), avec en prime L5/L10/L15 recalculés localement à partir des scores
+de ses derniers matchs — cette moyenne n'existe nulle part côté serveur pour
+un joueur qui n'a jamais été synchronisé, puisque la table `Projection` ne
+couvre que les joueurs déjà scorés par le pipeline. Le taux de titularisation
+n'est, lui, pas inventé pour ces joueurs : affiché "—" plutôt qu'une
+estimation qui n'existerait pas vraiment.
+
+L'offre de cartes (section précédente) se charge en arrière-plan pour
+chaque ligne, y compris les cartes possédées — la galerie ne porte pas cette
+donnée, seule `PlayerPopup`/`PlayerSheet` l'avait jusqu'ici.
+
 ## 2026-08-22 (suite 5) — Offre de cartes en circulation dans la fiche joueur
 
 Sorare expose `anyPlayer(slug).cardSupply` — le nombre de cartes en
