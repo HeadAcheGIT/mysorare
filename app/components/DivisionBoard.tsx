@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import { POSITION_SHORT } from "@/lib/types";
 import { startLabel, type PStartBasis } from "./StartProbability";
@@ -174,6 +174,13 @@ export default function DivisionBoard({
   // Bench + proposal are fetched per division, on open: a game week exposes
   // ~76 leaderboards, so loading them all up front would be mostly wasted.
   const [benches, setBenches] = useState<Record<string, BenchState>>({});
+  /**
+   * 0-100 sliders, not 0-1 — the API normalises by their sum regardless of
+   * scale, so this is purely about what reads naturally as a percentage.
+   * Default reproduces the standard proposal exactly (100% projection
+   * globale, see DEFAULT_LINEUP_WEIGHTS in divisionLineup.ts).
+   */
+  const [weights, setWeights] = useState({ form: 0, titu: 0, proj: 100 });
 
   useEffect(() => {
     apiFetch<FixtureRow[]>("/api/fixtures")
@@ -207,14 +214,15 @@ export default function DivisionBoard({
     if (selected) load(selected);
   }, [selected, load]);
 
-  /** Loads a division's real bench and best available line-up, once, on first open. */
+  /** Loads a division's real bench and best available line-up, once, on first open — or again when the weights below change. */
   const loadBench = useCallback(
     async (leaderboardSlug: string) => {
       if (!selected) return;
       setBenches((prev) => ({ ...prev, [leaderboardSlug]: { status: "loading" } }));
       try {
         const data = await apiFetch<DivisionProposal>(
-          `/api/divisions/bench?leaderboard=${encodeURIComponent(leaderboardSlug)}&fixture=${encodeURIComponent(selected)}`
+          `/api/divisions/bench?leaderboard=${encodeURIComponent(leaderboardSlug)}&fixture=${encodeURIComponent(selected)}` +
+            `&wForm=${weights.form}&wTitu=${weights.titu}&wProj=${weights.proj}`
         );
         setBenches((prev) => ({ ...prev, [leaderboardSlug]: { status: "ready", data } }));
       } catch (err) {
@@ -223,13 +231,36 @@ export default function DivisionBoard({
         setBenches((prev) => ({ ...prev, [leaderboardSlug]: { status: "error", message: msg(err) } }));
       }
     },
-    [selected]
+    [selected, weights]
   );
 
   function toggleDivision(key: string, leaderboardSlug: string, isOpen: boolean) {
     setOpenDivisions((prev) => ({ ...prev, [key]: !isOpen }));
     if (!isOpen && !benches[leaderboardSlug]) loadBench(leaderboardSlug);
   }
+
+  const openLeaderboardSlugs = useMemo(() => {
+    const slugs: string[] = [];
+    for (const t of tracks ?? []) {
+      for (const d of t.divisions) {
+        if (openDivisions[`${t.slug}:${d.slug}`]) slugs.push(d.slug);
+      }
+    }
+    return slugs;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracks, openDivisions]);
+
+  // Re-propose whichever divisions are already open when the sliders move —
+  // debounced so dragging doesn't fire a request per pixel. Opening a
+  // division for the first time already loads on its own, via toggleDivision.
+  useEffect(() => {
+    if (!openLeaderboardSlugs.length) return;
+    const timer = setTimeout(() => {
+      for (const slug of openLeaderboardSlugs) loadBench(slug);
+    }, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weights]);
 
   async function refresh() {
     if (!selected) return;
@@ -319,6 +350,38 @@ export default function DivisionBoard({
             {label}
           </button>
         ))}
+      </div>
+
+      <div className="rounded-lg bg-ink2 border border-line p-3 space-y-2">
+        <p className="text-[10px] font-mono uppercase tracking-wide text-muted">
+          Pondération de la compo proposée
+        </p>
+        {(
+          [
+            ["form", "Forme récente"],
+            ["titu", "Titularisation probable"],
+            ["proj", "Projection globale"],
+          ] as const
+        ).map(([key, label]) => (
+          <label key={key} className="flex items-center gap-2 text-xs">
+            <span className="w-36 shrink-0 text-muted">{label}</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={weights[key]}
+              onChange={(e) => setWeights((w) => ({ ...w, [key]: Number(e.target.value) }))}
+              aria-label={label}
+              className="flex-1"
+            />
+            <span className="w-8 shrink-0 text-right font-mono text-muted">{weights[key]}</span>
+          </label>
+        ))}
+        {weights.form === 0 && weights.titu === 0 && (
+          <p className="font-mono text-[10px] text-muted">
+            Réglage par défaut — identique à la proposition standard.
+          </p>
+        )}
       </div>
 
       {loading && <p className="font-mono text-sm text-muted">Chargement…</p>}

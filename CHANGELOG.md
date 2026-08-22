@@ -3,6 +3,30 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-22 (suite 7) — Compo pondérable : forme, titularisation, projection
+
+La compo optimale par division venait d'un score déjà figé (`ourExpected`,
+lui-même un blend interne à `publicProjection.ts` : 65/35 L5/L15, 50/50 avec
+la projection Sorare, ±12% de calendrier — rien de tout ça exposé). Trois
+curseurs dans l'onglet Compo permettent maintenant de repondérer ce score
+avant que l'optimiseur LP ne tourne : forme récente brute (L5/L15, ignore la
+probabilité de titularisation — favorise le potentiel), titularisation
+(cette même forme, pondérée par `pStart` — pénalise un banc), et projection
+globale (le blend existant, réglage par défaut, reproduit exactement l'ancien
+comportement).
+
+Choix délibéré : le solveur LP et ses contraintes (formation, quotas de
+poste, capitaine, cartes déjà engagées) restent intacts — seul le score
+donné en entrée à `toCandidates()` change. La compo proposée reste donc
+toujours validée par les vraies règles Sorare, jamais une compo "maison" qui
+ignorerait l'éligibilité réelle. `l5`/`l15` (déjà dans `Projection`, jamais
+remontés jusqu'ici) rejoignent `BenchCard` pour ça — zéro coût réseau
+supplémentaire.
+
+Curseurs débounced (400 ms) plutôt qu'une requête par pixel de glissement, et
+ne redéclenchent que les divisions déjà ouvertes — en ouvrir une neuve
+continue de charger une fois, comme avant.
+
 ## 2026-08-22 (suite 6) — Comparateur de joueurs côte à côte
 
 Deux à quatre joueurs, à comparer d'un coup d'œil plutôt qu'en ouvrant leur

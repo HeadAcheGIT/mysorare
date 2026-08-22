@@ -35,6 +35,9 @@ export interface BenchCard {
   ourExpected: number | null;
   ourPStart: number | null;
   sorareStarterOdds: number | null;
+  /** Raw form components, joined from Projection — the inputs weightedScore blends. */
+  l5: number | null;
+  l15: number | null;
 }
 
 type BenchNode = {
@@ -70,19 +73,52 @@ export const SO5_SHAPE: Rules = {
   minPStart: 0,
 };
 
+export interface LineupWeights {
+  form: number;
+  titu: number;
+  proj: number;
+}
+
+/**
+ * Reproduces today's behaviour exactly (score = ourExpected ?? sorareProjected
+ * ?? 0) — what proposeForDivision uses when the caller doesn't ask for a
+ * re-weighted preview, so the default proposal never changes just because
+ * weights now exist as a concept.
+ */
+export const DEFAULT_LINEUP_WEIGHTS: LineupWeights = { form: 0, titu: 0, proj: 1 };
+
+/**
+ * A candidate's score, blended from three components a manager can weigh
+ * against each other instead of trusting one fixed formula:
+ *  - `form`: raw recent form (L5/L15, same 65/35 split as
+ *    publicProjection.ts's own blend), regardless of how likely the player is
+ *    to actually start — favours ceiling over safety.
+ *  - `titu`: that same form, discounted by the probability of starting — a
+ *    high-ceiling player benched half the time scores low here.
+ *  - `proj`: the existing blended projection (Sorare + calendar + form,
+ *    already weighted upstream) — deferring to the model as it stands today.
+ * All three stay in So5-point units so the LP optimiser downstream, and the
+ * gain/ROI figures computed from its output, don't need to know weights
+ * exist — only the score fed into the solver changes, not its constraints.
+ */
+export function weightedScore(
+  b: Pick<BenchCard, "l5" | "l15" | "ourPStart" | "ourExpected" | "sorareProjected">,
+  weights: LineupWeights
+): number {
+  const form = 0.65 * (b.l5 ?? b.l15 ?? 0) + 0.35 * (b.l15 ?? b.l5 ?? 0);
+  const titu = (b.ourPStart ?? 0) * form;
+  const proj = b.ourExpected ?? b.sorareProjected ?? 0;
+  return weights.form * form + weights.titu * titu + weights.proj * proj;
+}
+
 /**
  * Turns bench rows into solver candidates.
- *
- * `expected` prefers our own projection and falls back to Sorare's for this
- * division — a card the local model has never scored (never enriched, just
- * bought) would otherwise be valued at 0 and never picked, which reads as
- * "your best card isn't worth fielding".
  *
  * Locked cards are dropped outright rather than scored low: they cannot be
  * selected at all, and leaving them in would let the solver build a line-up
  * that can't be entered.
  */
-export function toCandidates(bench: BenchCard[]): Candidate[] {
+export function toCandidates(bench: BenchCard[], weights: LineupWeights = DEFAULT_LINEUP_WEIGHTS): Candidate[] {
   return bench
     .filter((b) => !b.locked && b.cardSlug)
     .map((b) => ({
@@ -93,7 +129,7 @@ export function toCandidates(bench: BenchCard[]): Candidate[] {
       rarity: b.rarity,
       clubSlug: null,
       inSeason: false,
-      expected: b.ourExpected ?? b.sorareProjected ?? 0,
+      expected: weightedScore(b, weights),
       pStart: b.ourPStart ?? 0,
       l15: null,
       bonus: b.bonus,
@@ -182,6 +218,8 @@ export async function getDivisionBench(leaderboardSlug: string, fixtureSlug: str
         ourExpected: proj?.expectedScore ?? null,
         ourPStart: proj?.pStart ?? null,
         sorareStarterOdds: proj?.sorareStarterOdds ?? null,
+        l5: proj?.l5 ?? null,
+        l15: proj?.l15 ?? null,
       };
     });
 }
@@ -245,12 +283,12 @@ export interface DivisionProposal {
 export async function proposeForDivision(
   leaderboardSlug: string,
   fixtureSlug: string,
-  opts: { locked?: string[]; banned?: string[]; validate?: boolean } = {}
+  opts: { locked?: string[]; banned?: string[]; validate?: boolean; weights?: LineupWeights } = {}
 ): Promise<DivisionProposal> {
   const bench = await getDivisionBench(leaderboardSlug, fixtureSlug);
   const lockedCount = bench.filter((b) => b.locked).length;
 
-  const candidates = toCandidates(bench);
+  const candidates = toCandidates(bench, opts.weights);
   const solution = optimise(candidates, SO5_SHAPE, opts.locked ?? [], opts.banned ?? []);
 
   if (solution.infeasibleReason) {
