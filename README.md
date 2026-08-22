@@ -155,8 +155,7 @@ déclenche quand tu tapes dans l'app.
   — icône 📉/📈 sur la carte si le mouvement dépasse 10 %.
 - **Alertes mercato, à cinq niveaux** : Intérêt 👀 → Négociations 🗣️ → Accord
   trouvé 🤝 → Visite médicale 🏥 → Officialisé ✅, classées et croisées, pas
-  un simple mot-clé « transfert ». Section « MERCATO » en haut de l'onglet
-  Semaine, en plus du badge sur chaque carte.
+  un simple mot-clé « transfert ».
 
   **Pas d'accès direct à X/Twitter.** C'est là que les transferts se
   confirment en premier via des journalistes comme Fabrizio Romano, mais
@@ -187,6 +186,43 @@ Pour tout le reste (contexte approfondi sur une rumeur, actu générale) :
 c'est le rôle de la conversation avec Claude, pas de l'app. Poser la
 question directement marche mieux qu'un flux automatisé pour ce qui n'est
 pas déjà un signal chiffré ci-dessus.
+
+## Onglet Mercato — au-delà de la seule rumeur
+
+Un onglet dédié, avec un badge numéroté sur son icône de nav dès qu'un
+joueur mérite un coup d'œil. Deux listes, « Situations à risque » et
+« Bonnes nouvelles », construites à partir de quatre signaux — les alertes
+transfert ci-dessus, et trois de plus, tous calculés depuis des données déjà
+en base, sans appel Sorare supplémentaire (`lib/services/mercato.ts`,
+combinés côté client dans `lib/mercatoBoard.ts`) :
+
+- **Tendance de titularisation** : compare le `pStart` des deux dernières
+  journées à celui des trois précédentes, sur l'historique `Projection` déjà
+  recalculé chaque semaine pour chaque joueur possédé. Un écart de 20 points
+  ou plus est affiché comme signal — sous ce seuil, ce n'est que le
+  jitter normal du modèle d'une semaine sur l'autre. Ignoré pour un joueur
+  actuellement blessé ou suspendu : son `pStart` est alors forcé à 0 par le
+  modèle (`computeForm`), ce qui lirait comme une perte de place alors que
+  c'est simplement l'indisponibilité déjà signalée ailleurs.
+- **Tendance de forme** : réutilise exactement la règle « en progression »
+  de l'onglet Semaine (`trend()` dans `lib/services/insights.ts`) — une
+  seule définition de « en hausse » dans toute l'app, pas deux qui pourraient
+  diverger. Volontairement à sens unique : ce signal ne signale jamais une
+  forme en baisse, déjà couverte par « À vendre tant que ça vaut ».
+- **Championnat non couvert** : le `competitionSlug` du club actuel du
+  joueur n'est pas dans la liste que l'onglet Marché peut effectivement
+  scouter (`leaguesOpenForGameStats` de l'API Sorare, déjà chargée une fois
+  au lancement pour les badges de la galerie) — réutilisé tel quel plutôt que
+  rappelé une seconde fois, pour ne pas doubler ce coût réseau à chaque
+  ouverture de l'app.
+
+**Ce qui n'est délibérément pas tenté** : deviner la destination d'un
+transfert en cours. Le classement des titres (`transferStage.ts`) n'a pas
+d'étape de résolution d'entité — impossible d'en tirer fiablement « vers
+quel club » ou « vers quel championnat ». Une alerte transfert reste donc
+neutre (« à surveiller »), jamais étiquetée bonne ou mauvaise nouvelle ; ce
+sont les signaux situationnels ci-dessus, sur le club *actuel* du joueur,
+qui portent le verdict.
 
 ## Pourquoi la synchro est en deux temps
 

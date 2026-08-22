@@ -57,8 +57,12 @@ function avg(xs: number[]): number | null {
 /**
  * Recent-vs-baseline form trend. Compares the last 3 scores to the 4 before
  * them; needs 6 games so a single good match can't read as a trend.
+ *
+ * Exported for lib/services/mercato.ts, which reuses this exact rule as its
+ * "forme en hausse" opportunity signal — one definition of "trending up",
+ * not two that could quietly disagree.
  */
-function trend(scores: number[]): number | null {
+export function trend(scores: number[]): number | null {
   if (scores.length < 6) return null;
   const recent = avg(scores.slice(0, 3));
   const older = avg(scores.slice(3, 7));

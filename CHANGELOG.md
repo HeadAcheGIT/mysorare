@@ -3,6 +3,53 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-22 — Onglet Mercato : le rumeur ne dit pas si c'est bon ou mauvais pour toi
+
+L'encart mercato de l'onglet Semaine listait déjà les rumeurs de transfert,
+classées en cinq niveaux. Mais une rumeur seule ne répond pas à la vraie
+question d'un manager : est-ce que ça me met dans une bonne ou une mauvaise
+situation ? Impossible à dire depuis un titre de presse — le classificateur
+(`transferStage.ts`) n'a pas d'étape de résolution d'entité, donc aucun moyen
+fiable de savoir vers quel club ou quel championnat un joueur part.
+
+Plutôt que de deviner, l'onglet Mercato (nouveau, avec badge numéroté sur
+l'icône de nav) sépare deux choses : la rumeur elle-même, toujours neutre
+(« à surveiller », jamais « bonne » ou « mauvaise » nouvelle), et trois
+signaux sur la situation *actuelle* du joueur qui, eux, peuvent vraiment
+trancher — tendance de titularisation, tendance de forme, championnat non
+couvert par le scouting marché. Tous calculés depuis des données déjà en
+base (aucun appel Sorare de plus), voir `lib/services/mercato.ts` et la
+section dédiée du README.
+
+### La tendance de titularisation était déjà calculée, jamais comparée dans le temps
+
+`Projection.pStart` est recalculé à chaque synchro pour la journée à venir,
+et chaque ligne reste en base une fois la journée passée — un historique
+complet par joueur existait déjà, utilisé pour la calibration
+(`overallAccuracy`) mais jamais pour dire "ce joueur titularise moins qu'il
+y a trois semaines". Comparer les deux dernières journées aux trois
+précédentes suffit à le dire, sans reconstruire quoi que ce soit depuis les
+`Appearance` brutes.
+
+Piège évité : un joueur blessé ou suspendu voit son `pStart` forcé à 0 par
+le modèle interne — sans garde-fou, ça se serait lu comme une perte de place
+en club, alors que c'est simplement l'indisponibilité déjà signalée ailleurs
+dans l'app. Le signal est donc coupé pour ces joueurs plutôt que de doubler
+un signal déjà affiché avec un mauvais motif.
+
+### Un signal, une seule définition
+
+La tendance de forme réutilise exactement la règle "en progression" de
+l'onglet Semaine (`trend()` dans `insights.ts`), désormais exportée plutôt
+que dupliquée — une seule définition de "en hausse" dans toute l'app.
+Volontairement à sens unique : ce signal ne signale jamais une forme en
+baisse, déjà couverte par "À vendre tant que ça vaut".
+
+Le badge de couverture de championnat réutilise `coveredLeagues`, déjà
+chargé une fois au lancement pour les badges de la galerie — le combiner
+côté client (`lib/mercatoBoard.ts`) plutôt que de le recalculer côté serveur
+évite un second appel à l'API Sorare à chaque ouverture de l'onglet.
+
 ## 2026-08-21 (nuit) — Assistant d'achat : le gain marginal, pas le prix
 
 Une carte pas chère avec un bon score n'est pas un bon achat pour autant : si

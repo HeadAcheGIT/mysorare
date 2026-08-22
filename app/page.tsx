@@ -7,8 +7,10 @@ import { matchesSearch, searchTerms } from "@/lib/gallerySearch";
 import type { PriceComposition } from "@/lib/accountingRoi";
 import PlayerCard from "./components/PlayerCard";
 import AlertBadges, { type PlayerAlert } from "./components/AlertBadges";
-import MercatoAlerts from "./components/MercatoAlerts";
-import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, HistoryIcon, DataIcon } from "./components/NavIcons";
+import MercatoBoard from "./components/MercatoBoard";
+import { buildMercatoLists } from "@/lib/mercatoBoard";
+import type { MercatoSignalRow } from "@/lib/services/mercato";
+import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, MercatoIcon, HistoryIcon, DataIcon } from "./components/NavIcons";
 import PlayerSheet from "./components/PlayerSheet";
 import GalleryFilters, { type SortKey, type SortDirection, type DivisionOption, DEFAULT_DIRECTION } from "./components/GalleryFilters";
 import SortControl from "./components/SortControl";
@@ -119,7 +121,7 @@ function PriceBreakdown({ price }: { price: PriceCheck }) {
 }
 
 export default function Page() {
-  const [tab, setTab] = useState<"week" | "gallery" | "lineup" | "market" | "history" | "settings">(
+  const [tab, setTab] = useState<"week" | "mercato" | "gallery" | "lineup" | "market" | "history" | "settings">(
     // Coming back from Sorare Connect: the outcome is rendered by SorareLogin,
     // which only exists on the Données tab. Landing on Semaine instead left the
     // user on a normal-looking screen with no idea what had just happened.
@@ -466,6 +468,17 @@ export default function Page() {
     }
   }, []);
 
+  // Starting-time and form trends for the Mercato tab — see lib/services/mercato.ts.
+  // DB-only, no Sorare call, so loading it on every app open costs nothing extra.
+  const [mercatoSignals, setMercatoSignals] = useState<Record<string, MercatoSignalRow>>({});
+  const loadMercato = useCallback(async () => {
+    try {
+      setMercatoSignals(await apiFetch<Record<string, MercatoSignalRow>>("/api/mercato"));
+    } catch {
+      // Non-blocking: the transfer-rumor half of the tab still works on its own.
+    }
+  }, []);
+
   const loadLogs = useCallback(async () => {
     try {
       setLogs(await apiFetch("/api/sync-log"));
@@ -526,7 +539,16 @@ export default function Page() {
     loadInsights();
     loadCoveredLeagues();
     loadAlerts();
-  }, [loadSquad, loadGameWeek, loadInsights, loadCoveredLeagues, loadAlerts]);
+    loadMercato();
+  }, [loadSquad, loadGameWeek, loadInsights, loadCoveredLeagues, loadAlerts, loadMercato]);
+
+  // Same combination the Mercato tab itself renders, just for the nav badge —
+  // so the count on the icon can never disagree with what the tab shows.
+  const mercatoCount = useMemo(() => {
+    const { risks, opportunities } = buildMercatoLists(squad, alertsBySlug, coveredLeagues, mercatoSignals);
+    const slugs = new Set([...risks, ...opportunities].map((i) => i.card.playerSlug));
+    return slugs.size;
+  }, [squad, alertsBySlug, coveredLeagues, mercatoSignals]);
 
   useEffect(() => {
     if (tab === "settings") {
@@ -914,12 +936,11 @@ export default function Page() {
               </div>
             ) : (
               <>
+                <p className="font-mono text-xs text-muted -mt-1">
+                  Ce qui mérite une décision avant la clôture des compos — indisponibles, valeurs sûres,
+                  cartes à vendre. Les rumeurs et tendances de titularisation sont dans l&apos;onglet Mercato.
+                </p>
                 <GallerySummary cards={squad} />
-
-                {/* Mercato-window transfer alerts, ranked worst-kept-secret
-                    first — hides itself entirely when nothing is moving, so
-                    it costs nothing outside the transfer window. */}
-                <MercatoAlerts squad={squad} alertsBySlug={alertsBySlug} onSelectPlayer={openPlayer} />
 
                 {insightsLoading ? (
                   <p className="font-mono text-sm text-muted">Analyse en cours…</p>
@@ -936,6 +957,18 @@ export default function Page() {
                 )}
               </>
             )}
+          </section>
+        )}
+
+        {tab === "mercato" && (
+          <section aria-label="Mercato">
+            <MercatoBoard
+              squad={squad}
+              alertsBySlug={alertsBySlug}
+              coveredLeagues={coveredLeagues}
+              signals={mercatoSignals}
+              onSelectPlayer={openPlayer}
+            />
           </section>
         )}
 
@@ -965,6 +998,9 @@ export default function Page() {
               </div>
             ) : (
               <>
+                <p className="font-mono text-xs text-muted -mt-1">
+                  Toute ta galerie — filtre, trie, et repère les alertes prix et mercato sur chaque carte.
+                </p>
                 <GallerySummary cards={squad} />
                 <GalleryFilters
                   search={search}
@@ -1080,6 +1116,9 @@ export default function Page() {
               <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
                 Mes divisions
               </h2>
+              <p className="font-mono text-xs text-muted mb-2">
+                La compo optimale par division, à partir de ton vivier réel — validée par les règles Sorare.
+              </p>
               <DivisionBoard
                 currentFixture={gameWeek?.fixture ?? null}
                 onSelectPlayer={openPlayer}
@@ -1102,6 +1141,9 @@ export default function Page() {
               <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
                 Scouting par championnat
               </h2>
+              <p className="font-mono text-xs text-muted mb-2">
+                Repérer une cible avant d&apos;acheter — classé par championnat réellement couvert par l&apos;API.
+              </p>
               <Scouting onError={setError} onSelectPlayer={openPlayer} />
             </div>
 
@@ -1599,6 +1641,7 @@ export default function Page() {
           {(
             [
               ["week", "Semaine", WeekIcon],
+              ["mercato", "Mercato", MercatoIcon],
               ["gallery", "Galerie", GalleryIcon],
               ["lineup", "Compo", LineupIcon],
               ["market", "Marché", MarketIcon],
@@ -1610,11 +1653,21 @@ export default function Page() {
               key={key}
               onClick={() => setTab(key)}
               aria-current={tab === key ? "page" : undefined}
-              className={`flex-1 min-h-[48px] py-2 flex flex-col items-center justify-center gap-0.5 text-[11px] font-display uppercase tracking-wide border-t-2 ${
+              className={`relative flex-1 min-h-[48px] py-2 flex flex-col items-center justify-center gap-0.5 text-[11px] font-display uppercase tracking-wide border-t-2 ${
                 tab === key ? "text-flood border-flood" : "text-muted border-transparent"
               }`}
             >
-              <Icon />
+              <span className="relative">
+                <Icon />
+                {key === "mercato" && mercatoCount > 0 && (
+                  <span
+                    className="absolute -top-1 -right-2.5 min-w-[15px] h-[15px] px-[3px] rounded-full bg-warn text-ink text-[9px] font-bold font-mono flex items-center justify-center leading-none"
+                    aria-label={`${mercatoCount} joueur${mercatoCount > 1 ? "s" : ""} à surveiller`}
+                  >
+                    {mercatoCount > 9 ? "9+" : mercatoCount}
+                  </span>
+                )}
+              </span>
               {label}
             </button>
           ))}

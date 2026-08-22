@@ -43,6 +43,15 @@ export function LineupIcon() {
   );
 }
 
+export function MercatoIcon() {
+  return (
+    <svg {...common}>
+      <path d="M3 6.5h10.5M13.5 6.5 10.5 3.5M13.5 6.5 10.5 9.5" />
+      <path d="M17 13.5H6.5M6.5 13.5l3-3M6.5 13.5l3 3" />
+    </svg>
+  );
+}
+
 export function MarketIcon() {
   return (
     <svg {...common}>
