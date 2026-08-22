@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isFriendly } from "./playerDetail";
+import { isFriendly, latestCardSupply } from "./playerDetail";
 
 describe("isFriendly", () => {
   it("is false for null/empty competition", () => {
@@ -24,5 +24,20 @@ describe("isFriendly", () => {
 
   it("is case-insensitive", () => {
     expect(isFriendly("INTERNATIONAL FRIENDLIES")).toBe(true);
+  });
+});
+
+describe("latestCardSupply", () => {
+  it("is null with no rows", () => {
+    expect(latestCardSupply([])).toBeNull();
+  });
+
+  it("picks the row with the highest season, regardless of input order", () => {
+    const rows = [
+      { limited: 95, rare: 13, season: { startYear: 2026 } },
+      { limited: 749, rare: 83, season: { startYear: 2025 } },
+      { limited: 247, rare: 57, season: { startYear: 2023 } },
+    ];
+    expect(latestCardSupply(rows)).toEqual({ season: 2026, limited: 95, rare: 13 });
   });
 });

@@ -3,6 +3,66 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-22 (suite 5) — Offre de cartes en circulation dans la fiche joueur
+
+Sorare expose `anyPlayer(slug).cardSupply` — le nombre de cartes en
+circulation par rareté et par saison — mais rien dans l'app n'allait le
+chercher. Vérifié en direct contre l'API avant de coder dessus (une carte
+Ethan Mbappé prise au hasard : 749 limited et 83 rare sur la saison 2025,
+95/13 sur la 2026 déjà démarrée) : le champ répond bien sur
+`AnyPlayerInterface`, pas besoin de fragment inline comme pour d'autres
+champs déjà piégeux sur ce schéma (voir les commentaires de
+`lib/sorare/publicClient.ts`).
+
+Nouveau bloc "Offre en circulation" (Limited/Rare — Super Rare et Unique
+laissés de côté, cohérent avec le nettoyage des raretés ci-dessous) dans la
+fiche joueur, qu'elle soit possédée (`PlayerSheet`) ou pas (`PlayerPopup`).
+Deux chemins de données différents pour la même info : `PlayerPopup` a déjà
+`PlayerDetail` en mémoire (zéro requête de plus), alors que `PlayerSheet` ne
+connaît que les stats de la carte possédée elle-même — un composant dédié
+(`CardSupplyBlock.tsx`) va chercher l'offre à l'ouverture, un joueur à la
+fois, plutôt que d'alourdir le chargement de toute la galerie d'un appel
+Sorare par carte.
+
+## 2026-08-22 (suite 4) — Alertes de plus/moins-value sur le prix d'achat réel
+
+Les alertes existantes (`price_up`/`price_down`) comparent le floor du
+marché au floor de la veille — utile pour repérer un mouvement, aveugle sur
+la vraie question : cette carte vaut-elle plus ou moins que ce qu'elle a
+coûté. Nouvelle paire `value_up`/`value_down` qui compare `cardValue()` (déjà
+partagé avec la fiche joueur) au `boughtPrice` réel, seuil ±25 % — plus large
+que les 10 % du floor-move parce que c'est une comparaison long terme, pas du
+bruit quotidien.
+
+Différence structurelle avec les alertes existantes : celles-ci lisent
+uniquement Postgres (prix CSV, floor, valorisation déjà calculée), aucun
+appel à l'API Sorare. Elles tournent donc sur toute la galerie à chaque
+cron, indépendamment du budget de temps qui limite `checkPriceAlert`/
+`checkTransferAlert` aux joueurs les plus périmés.
+
+Un seul badge par joueur, pas par carte (même simplification que
+`trackedPlayers()` faisait déjà pour les alertes de prix) : un manager qui
+possède le même joueur en limited et en rare voit le signal de la première
+carte trouvée, pas les deux séparément.
+
+## 2026-08-22 (suite 3) — Galerie : raretés simplifiées, filtres plus-value et titularisation
+
+`TRACKED_RARITIES` valait `["common", "limited"]` — faux pour ce manager, qui
+ne joue qu'en limited/rare ; corrigé. Le sélecteur de rareté de la Galerie
+perd Common/Super Rare/Unique, qui n'ont jamais de carte à filtrer. `Scouting`
+se simplifie tout seul, déjà piloté par la même constante.
+`ALL_RARITIES` (les 5 raretés) reste inchangé : `/api/market/price` s'en sert
+pour pricer une carte déjà possédée même hors rareté "shoppée", et le CSV
+parse toujours les 5 — restreindre l'un ou l'autre ferait disparaître une
+carte reward d'une rareté inhabituelle plutôt que de simplement ne pas la
+proposer au filtre.
+
+Deux filtres en plus dans la Galerie : plus/moins-value (signe de
+`cardValue() - boughtPrice`, déjà calculé pour `PlayerSheet`) et "titulaire
+probable" (`pStart >= 50%`). Les cartes sans prix d'achat connu ne
+disparaissent pas — elles restent visibles sur "Toutes", exclues seulement
+si un filtre plus/moins-value précis est choisi.
+
 ## 2026-08-22 (suite 2) — Recherche joueur accessible depuis n'importe quel onglet
 
 La galerie avait déjà un champ de recherche (`lib/gallerySearch.ts`, tolérant

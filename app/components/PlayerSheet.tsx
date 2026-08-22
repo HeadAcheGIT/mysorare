@@ -6,6 +6,7 @@ import MatchList from "./MatchList";
 import PlayerNews from "./PlayerNews";
 import PlayerBadges from "./PlayerBadges";
 import StartProbability from "./StartProbability";
+import FetchedCardSupply from "./CardSupplyBlock";
 import { cardValue, POSITION_LABEL, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
 
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
@@ -283,6 +284,8 @@ export default function PlayerSheet({ card, onClose }: { card: SquadCard; onClos
             {card.serial != null && ` · n° de série ${card.serial}`}
             {card.inSeason && " · in-season"}
           </p>
+
+          <FetchedCardSupply slug={card.playerSlug} />
 
           <div>
             <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">Matchs</p>

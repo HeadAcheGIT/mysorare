@@ -6,6 +6,8 @@ import MatchList, { type MatchListDetail } from "./MatchList";
 import PlayerNews from "./PlayerNews";
 import PlayerBadges from "./PlayerBadges";
 import { POSITION_LABEL } from "@/lib/types";
+import type { CardSupply } from "@/lib/services/playerDetail";
+import { CardSupplyStats } from "./CardSupplyBlock";
 
 type PlayerDetail = MatchListDetail & {
   name: string;
@@ -16,6 +18,7 @@ type PlayerDetail = MatchListDetail & {
   injury: string | null;
   birthDate: string | null;
   competitionName: string | null;
+  cardSupply: CardSupply | null;
 };
 
 type MarketFloor = { floorByRarity: Record<string, number | null>; listedCount: number };
@@ -169,6 +172,8 @@ export default function PlayerPopup({
                   </div>
                 </div>
               )}
+
+              {detail.cardSupply && <CardSupplyStats supply={detail.cardSupply} />}
 
               <div>
                 <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">Matchs</p>

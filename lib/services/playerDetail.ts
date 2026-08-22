@@ -30,6 +30,19 @@ export interface GameEntry {
   assists: number | null;
 }
 
+/**
+ * How many cards of this player are in circulation this season, by rarity —
+ * "is this price justified by scarcity". Common has unlimited supply so
+ * Sorare doesn't count it; super rare/unique are dropped here too, since this
+ * manager's gallery (and so everything this figure is compared against) is
+ * exclusively limited/rare — see TRACKED_RARITIES in lib/types.ts.
+ */
+export interface CardSupply {
+  season: number;
+  limited: number;
+  rare: number;
+}
+
 export interface PlayerDetail {
   slug: string;
   name: string;
@@ -42,6 +55,7 @@ export interface PlayerDetail {
   birthDate: string | null;
   /** The club's domestic league/division, for the championship badge. */
   competitionName: string | null;
+  cardSupply: CardSupply | null;
   pastGames: GameEntry[];
   futureGames: GameEntry[];
 }
@@ -61,6 +75,9 @@ query PlayerDetail($slug: String!) {
     squaredPictureUrl
     activeClub { ... on Club { name pictureUrl domesticLeague { displayName } } }
     activeInjuries { status expectedEndDate }
+    # Verified live against the public API: resolves directly on
+    # AnyPlayerInterface, no inline fragment needed (unlike birthDate above).
+    cardSupply { limited rare season { startYear } }
     pastGames: anyPastGames(first: 8) {
       nodes {
         id
@@ -103,6 +120,13 @@ export function isFriendly(competition: string | null): boolean {
   return /friendl|amical/i.test(competition ?? "");
 }
 
+/** The most recent season's entry — "current supply" for a player still active. */
+export function latestCardSupply(rows: { limited: number; rare: number; season: { startYear: number } }[]): CardSupply | null {
+  if (!rows.length) return null;
+  const latest = rows.reduce((a, b) => (b.season.startYear > a.season.startYear ? b : a));
+  return { season: latest.season.startYear, limited: latest.limited, rare: latest.rare };
+}
+
 export async function getPlayerDetail(slug: string): Promise<PlayerDetail | null> {
   const data = await publicGraphql<{ anyPlayer: any }>(QUERY, { slug });
   const p = data.anyPlayer;
@@ -120,6 +144,7 @@ export async function getPlayerDetail(slug: string): Promise<PlayerDetail | null
     injury: injury?.status ?? null,
     birthDate: p.birthDate ?? null,
     competitionName: p.activeClub?.domesticLeague?.displayName ?? null,
+    cardSupply: latestCardSupply(p.cardSupply ?? []),
     pastGames: (p.pastGames?.nodes ?? []).map((g: any): GameEntry => {
       const competition = g.competition?.displayName ?? null;
       const stats = g.playerGameScore?.anyPlayerGameStats;
