@@ -1,23 +1,35 @@
 import { prisma } from "../prisma";
+import { cardValue } from "../types";
 import { getPlayerMarket } from "./market";
 import { searchPlayerNews, EN_LOCALE, type NewsItem } from "./news";
 import { summarizeTransferSignal } from "./transferStage";
 
 /**
- * Two standing signals worth a badge on a card: the live floor price moving
- * meaningfully since the last check, and where a transfer story has reached
- * (see transferStage.ts for the five-stage classifier and why it exists —
- * X's own API is the direct route to this and it's paid, so this is the
- * honest alternative). Both only run for players actually owned or
+ * Three standing signals worth a badge on a card: the live floor price moving
+ * meaningfully since the last check, today's value drifting from what was
+ * actually paid for the card, and where a transfer story has reached (see
+ * transferStage.ts for the five-stage classifier and why it exists — X's own
+ * API is the direct route to this and it's paid, so this is the honest
+ * alternative).
+ *
+ * Price and transfer checks only run for players actually owned or
  * watchlisted — a bounded, small set — never the whole market:
  *  - Price checks reuse the public API's own pacing (see publicClient.ts).
  *  - News checks reuse Google News' RSS search (see news.ts), which that
  *    file's own comments call a courtesy feed to be used "never in bulk" —
  *    so this runs at most once/day from the cron job, sequentially, with a
  *    deliberate delay between calls, not on every page load.
+ * The value-vs-bought-price check is different: it only reads rows already in
+ * Postgres (Card, PlayerValuation), no Sorare call at all, so it runs for the
+ * whole owned gallery on every invocation instead of being staleness-budgeted
+ * like the two above.
  */
 
 const PRICE_MOVE_THRESHOLD = 0.1; // 10%
+// Wider than the floor-move threshold on purpose: this compares against the
+// price actually paid, a long-horizon reference, not the previous daily
+// snapshot — a 10% band here would fire on almost every card almost always.
+const BOUGHT_VALUE_THRESHOLD = 0.25; // 25%
 const NEWS_DELAY_MS = 1500;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -119,6 +131,65 @@ async function checkPriceAlert(p: TrackedPlayer): Promise<void> {
   await upsertOrClearAlert(p.slug, "price_up", kind === "price_up" ? detail : null);
 }
 
+export type ValueClassification = { kind: "value_up" | "value_down" | null; detail: string | null };
+
+/**
+ * Pure decision, mirroring classifyPriceChange: given what a card cost and
+ * what it's worth today, which alert (if any) should stand.
+ */
+export function classifyValueChange(
+  boughtPrice: number | null | undefined,
+  reference: number | null,
+  threshold = BOUGHT_VALUE_THRESHOLD
+): ValueClassification {
+  if (boughtPrice == null || boughtPrice <= 0 || reference == null) return { kind: null, detail: null };
+  const change = (reference - boughtPrice) / boughtPrice;
+
+  if (change <= -threshold) {
+    return { kind: "value_down", detail: `${Math.round(change * 100)}% vs prix d'achat` };
+  }
+  if (change >= threshold) {
+    return { kind: "value_up", detail: `+${Math.round(change * 100)}% vs prix d'achat` };
+  }
+  return { kind: null, detail: null };
+}
+
+/**
+ * Every owned card with a known purchase price, checked against `cardValue`
+ * — the same trusted-worth figure the gallery and PlayerSheet already show.
+ * No Sorare call, so unlike the price/transfer checks this isn't
+ * staleness-budgeted: it simply covers the whole gallery every run.
+ *
+ * One alert per *player*, not per card, matching how PlayerAlert is keyed
+ * (see trackedPlayers above) — a manager holding two copies of the same
+ * player gets the first one found as the representative, same simplification
+ * already made there.
+ */
+async function checkValueAlerts(): Promise<void> {
+  const cards = await prisma.card.findMany({
+    where: { boughtPrice: { not: null } },
+    select: { playerSlug: true, rarity: true, inSeason: true, boughtPrice: true, price: true, floorPrice: true },
+  });
+  if (!cards.length) return;
+
+  const valuations = await prisma.playerValuation.findMany({
+    where: { playerSlug: { in: [...new Set(cards.map((c) => c.playerSlug))] } },
+  });
+  const valuationMap = new Map(valuations.map((v) => [`${v.playerSlug}:${v.rarity}:${v.inSeason}`, v]));
+
+  const seen = new Set<string>();
+  for (const c of cards) {
+    if (seen.has(c.playerSlug)) continue;
+    seen.add(c.playerSlug);
+
+    const valuation = valuationMap.get(`${c.playerSlug}:${c.rarity}:${c.inSeason}`) ?? null;
+    const reference = cardValue({ valuation, price: c.price, floorPrice: c.floorPrice });
+    const { kind, detail } = classifyValueChange(c.boughtPrice, reference);
+    await upsertOrClearAlert(c.playerSlug, "value_down", kind === "value_down" ? detail : null);
+    await upsertOrClearAlert(c.playerSlug, "value_up", kind === "value_up" ? detail : null);
+  }
+}
+
 /**
  * Two independent queries, not one: French vocabulary ("transfert") and
  * English ("transfer") return almost entirely disjoint outlet sets against
@@ -190,6 +261,13 @@ export interface AlertsProgress {
  */
 export async function runAlerts(budgetMs: number): Promise<AlertsProgress> {
   const started = Date.now();
+
+  try {
+    await checkValueAlerts();
+  } catch {
+    // A DB hiccup here shouldn't block the slower, API-bound checks below.
+  }
+
   const players = await trackedPlayers();
   let priceChecked = 0;
   let newsChecked = 0;

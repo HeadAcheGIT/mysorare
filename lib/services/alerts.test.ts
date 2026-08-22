@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyPriceChange } from "./alerts";
+import { classifyPriceChange, classifyValueChange } from "./alerts";
 
 describe("classifyPriceChange", () => {
   it("is null without a previous price", () => {
@@ -37,6 +37,46 @@ describe("classifyPriceChange", () => {
   it("respects a custom threshold", () => {
     expect(classifyPriceChange(100, 103, 0.02).kind).toBe("price_up");
     expect(classifyPriceChange(100, 103, 0.5).kind).toBeNull();
+  });
+});
+
+describe("classifyValueChange", () => {
+  it("is null without a bought price or a reference value", () => {
+    expect(classifyValueChange(null, 100)).toEqual({ kind: null, detail: null });
+    expect(classifyValueChange(undefined, 100)).toEqual({ kind: null, detail: null });
+    expect(classifyValueChange(50, null)).toEqual({ kind: null, detail: null });
+  });
+
+  it("is null when bought price is zero or negative (avoids division by zero)", () => {
+    expect(classifyValueChange(0, 100)).toEqual({ kind: null, detail: null });
+    expect(classifyValueChange(-5, 100)).toEqual({ kind: null, detail: null });
+  });
+
+  it("flags value_down for a loss of 25% or more against the purchase price", () => {
+    const result = classifyValueChange(100, 74);
+    expect(result.kind).toBe("value_down");
+    expect(result.detail).toContain("-26%");
+  });
+
+  it("flags value_up for a gain of 25% or more against the purchase price", () => {
+    const result = classifyValueChange(100, 130);
+    expect(result.kind).toBe("value_up");
+    expect(result.detail).toContain("+30%");
+  });
+
+  it("is null for a move within the threshold", () => {
+    expect(classifyValueChange(100, 110)).toEqual({ kind: null, detail: null });
+    expect(classifyValueChange(100, 90)).toEqual({ kind: null, detail: null });
+  });
+
+  it("is exactly at the boundary (25.0%) on the alerting side", () => {
+    expect(classifyValueChange(100, 75).kind).toBe("value_down");
+    expect(classifyValueChange(100, 125).kind).toBe("value_up");
+  });
+
+  it("respects a custom threshold", () => {
+    expect(classifyValueChange(100, 110, 0.05).kind).toBe("value_up");
+    expect(classifyValueChange(100, 110, 0.5).kind).toBeNull();
   });
 });
 

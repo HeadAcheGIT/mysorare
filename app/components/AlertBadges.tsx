@@ -29,6 +29,10 @@ const TONE_CLASS: Record<string, string> = {
 const ICON: Record<string, { icon: string; tone: "ok" | "warn"; label: string }> = {
   price_down: { icon: "📉", tone: "warn", label: "Baisse de prix" },
   price_up: { icon: "📈", tone: "ok", label: "Hausse de prix" },
+  // Distinct from price_up/price_down on purpose: those compare against the
+  // previous daily snapshot, these against what the card actually cost.
+  value_down: { icon: "🩸", tone: "warn", label: "Moins-value vs achat" },
+  value_up: { icon: "💰", tone: "ok", label: "Plus-value vs achat" },
 };
 
 /**
