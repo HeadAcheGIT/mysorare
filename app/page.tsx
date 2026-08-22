@@ -198,6 +198,8 @@ export default function Page() {
   const [sort, setSort] = useState<SortKey>("score");
   const [direction, setDirection] = useState<SortDirection>(DEFAULT_DIRECTION.score);
   const [inSeasonOnly, setInSeasonOnly] = useState(false);
+  const [roiFilter, setRoiFilter] = useState<"" | "gain" | "loss">("");
+  const [probableStarterOnly, setProbableStarterOnly] = useState(false);
   /**
    * Filter the gallery down to what Sorare says is eligible for one division.
    *
@@ -585,6 +587,17 @@ export default function Page() {
       if (position && c.position !== position) return false;
       if (rarity && c.rarity !== rarity) return false;
       if (inSeasonOnly && !c.inSeason) return false;
+      if (probableStarterOnly && (c.pStart ?? 0) < 0.5) return false;
+      if (roiFilter) {
+        const ref = cardValue(c);
+        // Cards with no known purchase price can't answer "gain or loss", so
+        // they only ever show under "Toutes" rather than being force-fit into
+        // one side.
+        if (ref == null || c.boughtPrice == null) return false;
+        const gain = ref - c.boughtPrice >= 0;
+        if (roiFilter === "gain" && !gain) return false;
+        if (roiFilter === "loss" && gain) return false;
+      }
       if (eligibleCards && !eligibleCards.has(c.cardSlug)) return false;
       return matchesSearch(c, terms);
     });
@@ -613,7 +626,7 @@ export default function Page() {
       }
       return compareNullable(score(a), score(b), direction);
     });
-  }, [squad, search, position, rarity, inSeasonOnly, eligibleCards, sort, direction]);
+  }, [squad, search, position, rarity, inSeasonOnly, probableStarterOnly, roiFilter, eligibleCards, sort, direction]);
 
   // Ten per page: the cards now carry the next match and the value, so a page
   // is meant to be read without scrolling rather than skimmed.
@@ -631,7 +644,7 @@ export default function Page() {
   // filter doesn't land on an empty page.
   useEffect(() => {
     setPage(1);
-  }, [search, position, rarity, inSeasonOnly, division, sort, direction]);
+  }, [search, position, rarity, inSeasonOnly, probableStarterOnly, roiFilter, division, sort, direction]);
 
   /**
    * The divisions available for the eligibility filter.
@@ -1039,6 +1052,10 @@ export default function Page() {
                   onDirection={setDirection}
                   inSeasonOnly={inSeasonOnly}
                   onInSeasonOnly={setInSeasonOnly}
+                  probableStarterOnly={probableStarterOnly}
+                  onProbableStarterOnly={setProbableStarterOnly}
+                  roiFilter={roiFilter}
+                  onRoiFilter={setRoiFilter}
                   divisions={divisionOptions}
                   division={division}
                   onDivision={setDivision}

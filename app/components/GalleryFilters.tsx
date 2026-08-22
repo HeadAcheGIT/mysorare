@@ -53,6 +53,10 @@ export default function GalleryFilters({
   onDirection,
   inSeasonOnly,
   onInSeasonOnly,
+  probableStarterOnly,
+  onProbableStarterOnly,
+  roiFilter,
+  onRoiFilter,
   divisions,
   division,
   onDivision,
@@ -71,6 +75,10 @@ export default function GalleryFilters({
   onDirection: (d: SortDirection) => void;
   inSeasonOnly: boolean;
   onInSeasonOnly: (v: boolean) => void;
+  probableStarterOnly: boolean;
+  onProbableStarterOnly: (v: boolean) => void;
+  roiFilter: "" | "gain" | "loss";
+  onRoiFilter: (v: "" | "gain" | "loss") => void;
   divisions: DivisionOption[];
   division: string;
   onDivision: (v: string) => void;
@@ -136,11 +144,8 @@ export default function GalleryFilters({
           className="flex-1 bg-ink border border-line rounded-md px-2 py-1.5 text-xs"
         >
           <option value="">Toutes raretés</option>
-          <option value="common">Common</option>
           <option value="limited">Limited</option>
           <option value="rare">Rare</option>
-          <option value="super_rare">Super Rare</option>
-          <option value="unique">Unique</option>
         </select>
 
         <div className="flex-1">
@@ -164,6 +169,29 @@ export default function GalleryFilters({
           }`}
         >
           IS
+        </button>
+      </div>
+
+      <div className="flex gap-2">
+        <select
+          value={roiFilter}
+          onChange={(e) => onRoiFilter(e.target.value as "" | "gain" | "loss")}
+          aria-label="Filtrer par plus/moins-value"
+          className="flex-1 bg-ink border border-line rounded-md px-2 py-1.5 text-xs"
+        >
+          <option value="">Plus/moins-value : toutes</option>
+          <option value="gain">En plus-value</option>
+          <option value="loss">En moins-value</option>
+        </select>
+
+        <button
+          onClick={() => onProbableStarterOnly(!probableStarterOnly)}
+          aria-pressed={probableStarterOnly}
+          className={`shrink-0 px-3 py-1.5 rounded-md text-xs font-mono border whitespace-nowrap ${
+            probableStarterOnly ? "bg-ok/15 text-ok border-ok" : "border-line text-muted"
+          }`}
+        >
+          Titu probable
         </button>
       </div>
     </div>
