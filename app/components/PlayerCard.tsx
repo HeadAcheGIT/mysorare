@@ -2,6 +2,7 @@
 
 import Sparkline from "./Sparkline";
 import AlertBadges, { type PlayerAlert } from "./AlertBadges";
+import PlayerBadges from "./PlayerBadges";
 import StartProbability from "./StartProbability";
 import { POSITION_SHORT, cardValue, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
 import { ordinalFr } from "@/lib/format";
@@ -33,11 +34,17 @@ function kickoff(iso: string | null): string | null {
 export default function PlayerCard({
   card,
   onSelect,
+  coveredLeagues,
   alerts,
+  mercatoRisk,
 }: {
   card: SquadCard;
   onSelect?: (card: SquadCard) => void;
+  /** Slugs of leagues the scouting tab can actually search — see /api/scouting. */
+  coveredLeagues?: Set<string>;
   alerts?: PlayerAlert[];
+  /** Why this player is in the Mercato "à risque" list, if he is — see lib/mercatoBoard.ts. */
+  mercatoRisk?: string;
 }) {
   const rarity = rarityOf(card.rarity);
   // Our own projection when it exists, else Sorare's, else the CSV average —
@@ -45,9 +52,11 @@ export default function PlayerCard({
   const score = card.expected ?? card.sorareProjection ?? card.l10;
   const scoreLabel = card.expected != null ? "projeté" : card.sorareProjection != null ? "Sorare" : "L10";
   const unavailable = Boolean(card.injury || card.suspended);
+  const covered = card.competitionSlug ? coveredLeagues?.has(card.competitionSlug) : undefined;
   const isUnique = card.rarity === "unique";
   // Same order of trust as everywhere else — completed sales, then the CSV.
   const value = cardValue(card);
+  const profit = value != null && card.boughtPrice != null ? value - card.boughtPrice : null;
   const when = kickoff(card.nextGame?.date ?? null);
 
   return (
@@ -93,17 +102,40 @@ export default function PlayerCard({
                 {card.suspended ? "suspendu" : "blessé"}
               </span>
             )}
+            {mercatoRisk && (
+              <span
+                title={mercatoRisk}
+                className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-warn/15 text-warn font-mono"
+              >
+                ⚠ mercato
+              </span>
+            )}
           </div>
 
           <p className="text-xs text-muted truncate">
             <span className={`font-mono ${rarity.text}`}>{POSITION_SHORT[card.position] ?? card.position}</span>
             {" · "}
             {card.club ?? "sans club"}
+            {card.serial != null && <span className="text-muted/70"> · #{card.serial}</span>}
+          </p>
+
+          <p className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <PlayerBadges
+              birthDate={card.birthDate}
+              competitionName={card.competitionName}
+              inSeason={card.inSeason}
+              unavailable={unavailable}
+              covered={covered}
+              engagedInLineup={card.engagedInLineup}
+            />
           </p>
 
           {/* Probability and value together, not one or the other: the old
               card showed the price only when no probability existed, so a
-              player you could field never displayed what he was worth. */}
+              player you could field never displayed what he was worth. Value
+              is colour-coded gain/loss vs what the card actually cost, same
+              rule as PlayerSheet, so the card answers "combien" and "bonne
+              affaire ou pas" in the same glance. */}
           <div className="flex items-center gap-3 mt-1.5">
             <Sparkline scores={card.recentScores} lastPlayedAt={card.lastPlayedAt} />
             {card.pStart != null && (
@@ -114,7 +146,14 @@ export default function PlayerCard({
                 sorareOdds={card.sorareStarterOdds}
               />
             )}
-            <span className="font-mono text-[11px] text-muted">{eur(value)}</span>
+            <span
+              className={`font-mono text-[11px] ${
+                profit == null ? "text-muted" : profit >= 0 ? "text-ok" : "text-warn"
+              }`}
+              title={profit != null ? `${profit >= 0 ? "+" : ""}${profit.toFixed(2)} € vs achat (${eur(card.boughtPrice)})` : undefined}
+            >
+              {eur(value)}
+            </span>
           </div>
 
           {/* The match the projection is actually about. A starting

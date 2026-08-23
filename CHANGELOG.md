@@ -3,6 +3,32 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-23 (suite) — La carte joueur retrouve ses badges, plus deux signaux
+
+Correction du point précédent : retirer le rang de badges (U23, championnat,
+in-season/Classic, série, "déjà en compo") de `PlayerCard` a simplifié la
+carte au prix d'informations que l'utilisateur consultait activement d'un
+coup d'œil sur la liste — retour direct après coup : "je veux quand même
+avoir au premier coup d'œil [...] c'est super pratique". Le rang réapparaît
+tel qu'avant.
+
+Deux signaux en plus, demandés dans la foulée plutôt que retirés puis
+redemandés séparément :
+
+- **Plus/moins-value visible sans ouvrir la fiche** : le prix déjà affiché sur
+  la carte (ligne forme/probabilité/valeur) se colore désormais en vert/rouge
+  selon le signe de `cardValue() - boughtPrice`, même règle que `PlayerSheet`.
+  Une info-bulle donne le delta exact. `AlertBadges` continue de porter ses
+  propres icônes 💰/🩸 pour les mouvements ≥ 25 % — les deux sont
+  complémentaires, pas redondants : l'icône signale un mouvement notable,
+  la couleur donne le statut à tout instant, y compris pour un petit écart.
+- **Badge "⚠ mercato"** sur la carte dès que le joueur figure dans la liste
+  "à risque" de l'onglet Mercato (transfert en cours, titularisation en
+  baisse, championnat non couvert — voir `lib/mercatoBoard.ts`). Calculé une
+  seule fois par rendu et partagé entre le badge du nav, ce badge de carte et
+  l'onglet Mercato lui-même, pour que les trois ne puissent jamais se
+  contredire sur qui est signalé.
+
 ## 2026-08-23 — Clarté : cinq passes de hiérarchie visuelle
 
 Cinq semaines de fonctionnalités denses (pondération de compo, comparateur,
@@ -18,7 +44,8 @@ ni aux données affichées :
   `PlayerSheet`/`PlayerPopup`, qui l'affichaient déjà. Le trio
   forme/probabilité/valeur reste groupé sur la carte : un commentaire déjà en
   place dans le code documentait que c'était un choix délibéré (voir
-  l'historique), pas un oubli à corriger.
+  l'historique), pas un oubli à corriger. *(Revenu sur ce point le jour même,
+  voir l'entrée au-dessus.)*
 - **`GalleryFilters`** empilait huit contrôles avant la première carte.
   Recherche et tri restent toujours visibles ; poste, rareté, division,
   plus/moins-value et "titu probable" rejoignent un tiroir "Filtres" replié

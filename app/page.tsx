@@ -585,13 +585,26 @@ export default function Page() {
     loadMercato();
   }, [loadSquad, loadGameWeek, loadInsights, loadCoveredLeagues, loadAlerts, loadMercato]);
 
-  // Same combination the Mercato tab itself renders, just for the nav badge —
-  // so the count on the icon can never disagree with what the tab shows.
+  // Computed once and shared by the nav badge, the Gallery's mercato warning
+  // pill and the Mercato tab itself — so none of the three can ever disagree
+  // about who's flagged.
+  const mercatoLists = useMemo(
+    () => buildMercatoLists(squad, alertsBySlug, coveredLeagues, mercatoSignals),
+    [squad, alertsBySlug, coveredLeagues, mercatoSignals]
+  );
   const mercatoCount = useMemo(() => {
-    const { risks, opportunities } = buildMercatoLists(squad, alertsBySlug, coveredLeagues, mercatoSignals);
-    const slugs = new Set([...risks, ...opportunities].map((i) => i.card.playerSlug));
+    const slugs = new Set([...mercatoLists.risks, ...mercatoLists.opportunities].map((i) => i.card.playerSlug));
     return slugs.size;
-  }, [squad, alertsBySlug, coveredLeagues, mercatoSignals]);
+  }, [mercatoLists]);
+  // "À risque" only — the Gallery pill is a warning, not a place to surface
+  // good news too. The joined reason labels double as the pill's tooltip.
+  const mercatoRiskBySlug = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const item of mercatoLists.risks) {
+      map[item.card.playerSlug] = item.reasons.map((r) => r.label).join(" · ");
+    }
+    return map;
+  }, [mercatoLists]);
 
   useEffect(() => {
     if (tab === "settings") {
@@ -1143,7 +1156,9 @@ export default function Page() {
                       key={c.cardSlug}
                       card={c}
                       onSelect={setSelected}
+                      coveredLeagues={coveredLeagues}
                       alerts={alertsBySlug[c.playerSlug]}
+                      mercatoRisk={mercatoRiskBySlug[c.playerSlug]}
                     />
                   ))}
                 </ul>
