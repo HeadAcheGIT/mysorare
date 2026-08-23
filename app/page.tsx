@@ -10,7 +10,7 @@ import AlertBadges, { type PlayerAlert } from "./components/AlertBadges";
 import MercatoBoard from "./components/MercatoBoard";
 import { buildMercatoLists } from "@/lib/mercatoBoard";
 import type { MercatoSignalRow } from "@/lib/services/mercato";
-import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, MercatoIcon, HistoryIcon, DataIcon, SearchIcon } from "./components/NavIcons";
+import { WeekIcon, GalleryIcon, LineupIcon, MarketIcon, MercatoIcon, HistoryIcon, DataIcon, SearchIcon, MoreIcon } from "./components/NavIcons";
 import GlobalSearch from "./components/GlobalSearch";
 import PlayerCompare from "./components/PlayerCompare";
 import PlayerSheet from "./components/PlayerSheet";
@@ -156,6 +156,10 @@ export default function Page() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [compareSlugs, setCompareSlugs] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
+  /** Header menu for the two low-frequency tabs (Historique, Données) — kept out of the bottom nav. */
+  const [moreOpen, setMoreOpen] = useState(false);
+  /** Compo tab: retrospective blocks (Debrief/ROI/fiabilité), closed by default so the actual composer leads. */
+  const [bilanOpen, setBilanOpen] = useState(false);
 
   /** Toggle a player in/out of the comparator tray, capped at 4 — a fifth column stops being readable. */
   const toggleCompare = useCallback((slug: string) => {
@@ -200,6 +204,16 @@ export default function Page() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen]);
+
+  // Escape closes the header's "more" menu, same as every other overlay in the app.
+  useEffect(() => {
+    if (!moreOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMoreOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [moreOpen]);
 
   // Gallery controls
   const [search, setSearch] = useState("");
@@ -941,6 +955,53 @@ export default function Page() {
           >
             <SearchIcon />
           </button>
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setMoreOpen((o) => !o)}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-label="Plus — Historique et Données"
+              className={`w-9 h-9 grid place-items-center rounded-md border ${
+                tab === "history" || tab === "settings" ? "border-flood text-flood" : "border-line text-muted"
+              }`}
+            >
+              <MoreIcon />
+            </button>
+            {moreOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setMoreOpen(false)} aria-hidden />
+                <div
+                  role="menu"
+                  className="absolute right-0 top-11 z-30 w-48 bg-ink2 border border-line rounded-md shadow-lg overflow-hidden"
+                >
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setTab("history");
+                      setMoreOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 ${
+                      tab === "history" ? "text-flood" : "text-fg"
+                    }`}
+                  >
+                    <HistoryIcon /> Historique
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setTab("settings");
+                      setMoreOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 border-t border-line ${
+                      tab === "settings" ? "text-flood" : "text-fg"
+                    }`}
+                  >
+                    <DataIcon /> Données
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -1082,7 +1143,6 @@ export default function Page() {
                       key={c.cardSlug}
                       card={c}
                       onSelect={setSelected}
-                      coveredLeagues={coveredLeagues}
                       alerts={alertsBySlug[c.playerSlug]}
                     />
                   ))}
@@ -1125,13 +1185,25 @@ export default function Page() {
                 compte. Les vraies divisions, avec leur vivier réel et une
                 compo proposée validée par Sorare, sont dans DivisionBoard
                 ci-dessous. */}
-            {/* Placed with the line-ups on purpose: these are the scoreboard
-                for every probability and every recommendation the tab above
-                just made. */}
-            <div className="mt-6 pt-4 border-t border-line space-y-6">
-              <Debrief fixture={fixture} />
-              <DivisionRoi />
-              <ProjectionAccuracy />
+            <div>
+              <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
+                Mes divisions
+              </h2>
+              <p className="font-mono text-xs text-muted mb-2">
+                La compo optimale par division, à partir de ton vivier réel — validée par les règles Sorare.
+              </p>
+              <DivisionBoard
+                currentFixture={gameWeek?.fixture ?? null}
+                onSelectPlayer={openPlayer}
+                onError={setError}
+              />
+            </div>
+
+            <div className="mt-6">
+              <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
+                Où me lancer en in-season
+              </h2>
+              <InSeasonAdvisor fixture={gameWeek?.fixture ?? null} onError={setError} />
             </div>
 
             {savedLineups.length > 0 && (
@@ -1163,25 +1235,29 @@ export default function Page() {
               </div>
             )}
 
-            <div className="mt-6">
-              <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
-                Mes divisions
-              </h2>
-              <p className="font-mono text-xs text-muted mb-2">
-                La compo optimale par division, à partir de ton vivier réel — validée par les règles Sorare.
-              </p>
-              <DivisionBoard
-                currentFixture={gameWeek?.fixture ?? null}
-                onSelectPlayer={openPlayer}
-                onError={setError}
-              />
-            </div>
-
-            <div className="mt-6">
-              <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">
-                Où me lancer en in-season
-              </h2>
-              <InSeasonAdvisor fixture={gameWeek?.fixture ?? null} onError={setError} />
+            {/* Ce sont les scores de la compo déjà jouée, pas un outil pour en
+                composer une : replié par défaut pour que l'onglet ouvre sur la
+                tâche qu'il promet, et monté seulement à l'ouverture pour ne
+                pas déclencher trois requêtes à chaque fois qu'on regarde Compo. */}
+            <div className="mt-6 pt-4 border-t border-line">
+              <button
+                type="button"
+                onClick={() => setBilanOpen((o) => !o)}
+                aria-expanded={bilanOpen}
+                className="w-full flex items-center justify-between gap-2 text-left"
+              >
+                <span className="font-display uppercase text-sm tracking-wide text-muted">
+                  Bilan de la dernière compo
+                </span>
+                <span aria-hidden className="text-muted text-xs">{bilanOpen ? "▴" : "▾"}</span>
+              </button>
+              {bilanOpen && (
+                <div className="mt-3 space-y-6">
+                  <Debrief fixture={fixture} />
+                  <DivisionRoi />
+                  <ProjectionAccuracy />
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -1736,8 +1812,6 @@ export default function Page() {
               ["gallery", "Galerie", GalleryIcon],
               ["lineup", "Compo", LineupIcon],
               ["market", "Marché", MarketIcon],
-              ["history", "Historique", HistoryIcon],
-              ["settings", "Données", DataIcon],
             ] as const
           ).map(([key, label, Icon]) => (
             <button

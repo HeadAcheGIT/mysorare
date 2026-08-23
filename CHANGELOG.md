@@ -3,6 +3,38 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-23 — Clarté : cinq passes de hiérarchie visuelle
+
+Cinq semaines de fonctionnalités denses (pondération de compo, comparateur,
+alertes de plus-value, offre de cartes…) étaient arrivées plus vite que la
+hiérarchie visuelle censée les contenir — retour direct de l'utilisateur :
+"le site manque de clarté". Un audit du code (sans rendu réel, pas de base
+locale) a isolé cinq points précis, tous corrigés ici sans toucher au calcul
+ni aux données affichées :
+
+- **`PlayerCard`** listait jusqu'à 12 signaux au même poids visuel. Le rang de
+  badges secondaires (U23, championnat, in-season/Classic, série, "déjà en
+  compo") est retiré de la liste — il reste disponible d'un tap, dans
+  `PlayerSheet`/`PlayerPopup`, qui l'affichaient déjà. Le trio
+  forme/probabilité/valeur reste groupé sur la carte : un commentaire déjà en
+  place dans le code documentait que c'était un choix délibéré (voir
+  l'historique), pas un oubli à corriger.
+- **`GalleryFilters`** empilait huit contrôles avant la première carte.
+  Recherche et tri restent toujours visibles ; poste, rareté, division,
+  plus/moins-value et "titu probable" rejoignent un tiroir "Filtres" replié
+  par défaut, avec un compteur sur le bouton pour que des filtres actifs ne
+  deviennent jamais invisibles. Au passage, le bouton `IS` — un sigle sans
+  aucune explication à l'écran — devient "Saison en cours".
+- **Nav basse** : Historique (bilan rétrospectif) et Données (import/sync/
+  connexion) quittent la barre de 7 onglets pour un menu "Plus" dans l'en-tête,
+  à côté de la recherche — même endroit, moins de bruit sur les 5 onglets
+  d'usage quotidien. Le bouton se colore quand l'un des deux est actif.
+- **Onglet Compo** ouvrait sur trois blocs rétrospectifs (Debrief, ROI par
+  division, fiabilité des projections) avant le composeur réel. `DivisionBoard`
+  passe en tête ; le bilan rejoint un repli "Bilan de la dernière compo", fermé
+  par défaut et monté seulement à l'ouverture — ce qui évite aussi trois
+  requêtes à chaque ouverture de l'onglet pour qui ne regarde pas ce bloc.
+
 ## 2026-08-22 (suite 7) — Compo pondérable : forme, titularisation, projection
 
 La compo optimale par division venait d'un score déjà figé (`ourExpected`,

@@ -2,7 +2,6 @@
 
 import Sparkline from "./Sparkline";
 import AlertBadges, { type PlayerAlert } from "./AlertBadges";
-import PlayerBadges from "./PlayerBadges";
 import StartProbability from "./StartProbability";
 import { POSITION_SHORT, cardValue, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
 import { ordinalFr } from "@/lib/format";
@@ -34,13 +33,10 @@ function kickoff(iso: string | null): string | null {
 export default function PlayerCard({
   card,
   onSelect,
-  coveredLeagues,
   alerts,
 }: {
   card: SquadCard;
   onSelect?: (card: SquadCard) => void;
-  /** Slugs of leagues the scouting tab can actually search — see /api/scouting. */
-  coveredLeagues?: Set<string>;
   alerts?: PlayerAlert[];
 }) {
   const rarity = rarityOf(card.rarity);
@@ -49,7 +45,6 @@ export default function PlayerCard({
   const score = card.expected ?? card.sorareProjection ?? card.l10;
   const scoreLabel = card.expected != null ? "projeté" : card.sorareProjection != null ? "Sorare" : "L10";
   const unavailable = Boolean(card.injury || card.suspended);
-  const covered = card.competitionSlug ? coveredLeagues?.has(card.competitionSlug) : undefined;
   const isUnique = card.rarity === "unique";
   // Same order of trust as everywhere else — completed sales, then the CSV.
   const value = cardValue(card);
@@ -104,21 +99,6 @@ export default function PlayerCard({
             <span className={`font-mono ${rarity.text}`}>{POSITION_SHORT[card.position] ?? card.position}</span>
             {" · "}
             {card.club ?? "sans club"}
-            {card.serial != null && <span className="text-muted/70"> · #{card.serial}</span>}
-          </p>
-
-          {/* Second-tier signals — eligibility and division. Kept off the name
-              row on purpose (see PlayerCard audit note H-2): a long real name
-              was losing the truncation fight against 3+ badges. */}
-          <p className="flex items-center gap-1.5 mt-1 flex-wrap">
-            <PlayerBadges
-              birthDate={card.birthDate}
-              competitionName={card.competitionName}
-              inSeason={card.inSeason}
-              unavailable={unavailable}
-              covered={covered}
-              engagedInLineup={card.engagedInLineup}
-            />
           </p>
 
           {/* Probability and value together, not one or the other: the old

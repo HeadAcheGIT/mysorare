@@ -91,3 +91,14 @@ export function SearchIcon() {
     </svg>
   );
 }
+
+/** Header "more" menu — Historique and Données, moved out of the bottom nav. */
+export function MoreIcon() {
+  return (
+    <svg {...common} fill="currentColor" stroke="none">
+      <circle cx="10" cy="4.5" r="1.6" />
+      <circle cx="10" cy="10" r="1.6" />
+      <circle cx="10" cy="15.5" r="1.6" />
+    </svg>
+  );
+}

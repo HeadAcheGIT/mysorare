@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import SortControl, { type SortDirection } from "./SortControl";
 
 export type SortKey = "score" | "name" | "price" | "form" | "titu" | "u23" | "recent";
@@ -85,6 +86,19 @@ export default function GalleryFilters({
   divisionLoading: boolean;
   divisionNote: string | null;
 }) {
+  // Closed by default: the badge on the toggle already says how many are
+  // active, so a manager who set filters last visit isn't left wondering
+  // whether they're still applied just because the panel starts collapsed.
+  const [open, setOpen] = useState(false);
+  const activeCount = [
+    position !== "",
+    rarity !== "",
+    division !== "",
+    inSeasonOnly,
+    probableStarterOnly,
+    roiFilter !== "",
+  ].filter(Boolean).length;
+
   return (
     <div className="space-y-2 mb-4">
       <input
@@ -95,58 +109,23 @@ export default function GalleryFilters({
         className="w-full bg-ink border border-line rounded-md px-3 py-2 text-sm"
       />
 
-      {/* Eligibility is Sorare's own answer, not a rule we re-derive: a
-          division's bench already accounts for rarity, season and cards
-          committed elsewhere, which no local filter could reproduce. */}
-      {divisions.length > 0 && (
-        <div>
-          <select
-            value={division}
-            onChange={(e) => onDivision(e.target.value)}
-            aria-label="Filtrer par division d'éligibilité"
-            className="w-full bg-ink border border-line rounded-md px-2 py-1.5 text-xs"
-          >
-            <option value="">Toutes mes cartes</option>
-            {divisions.map((d) => (
-              <option key={d.slug} value={d.slug}>
-                Éligibles — {d.label}
-              </option>
-            ))}
-          </select>
-          {(divisionLoading || divisionNote) && (
-            <p className="mt-1 font-mono text-[10px] text-muted">
-              {divisionLoading ? "Lecture du vivier Sorare…" : divisionNote}
-            </p>
-          )}
-        </div>
-      )}
-
-      <div className="flex gap-1.5" role="group" aria-label="Filtrer par poste">
-        {POSITIONS.map(([value, label]) => (
-          <button
-            key={value}
-            onClick={() => onPosition(value)}
-            aria-pressed={position === value}
-            className={`flex-1 py-1.5 rounded-md text-xs font-display uppercase tracking-wide border ${
-              position === value ? "bg-flood text-ink border-flood font-bold" : "border-line text-muted"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
       <div className="flex gap-2">
-        <select
-          value={rarity}
-          onChange={(e) => onRarity(e.target.value)}
-          aria-label="Filtrer par rareté"
-          className="flex-1 bg-ink border border-line rounded-md px-2 py-1.5 text-xs"
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono border ${
+            activeCount > 0 ? "border-flood text-flood" : "border-line text-muted"
+          }`}
         >
-          <option value="">Toutes raretés</option>
-          <option value="limited">Limited</option>
-          <option value="rare">Rare</option>
-        </select>
+          Filtres
+          {activeCount > 0 && (
+            <span className="min-w-[16px] h-4 px-1 rounded-full bg-flood text-ink text-[10px] font-bold flex items-center justify-center leading-none">
+              {activeCount}
+            </span>
+          )}
+          <span aria-hidden className="text-[10px]">{open ? "▴" : "▾"}</span>
+        </button>
 
         <div className="flex-1">
           <SortControl
@@ -160,40 +139,99 @@ export default function GalleryFilters({
             onDirection={onDirection}
           />
         </div>
-
-        <button
-          onClick={() => onInSeasonOnly(!inSeasonOnly)}
-          aria-pressed={inSeasonOnly}
-          className={`px-3 py-1.5 rounded-md text-xs font-mono border ${
-            inSeasonOnly ? "bg-ok/15 text-ok border-ok" : "border-line text-muted"
-          }`}
-        >
-          IS
-        </button>
       </div>
 
-      <div className="flex gap-2">
-        <select
-          value={roiFilter}
-          onChange={(e) => onRoiFilter(e.target.value as "" | "gain" | "loss")}
-          aria-label="Filtrer par plus/moins-value"
-          className="flex-1 bg-ink border border-line rounded-md px-2 py-1.5 text-xs"
-        >
-          <option value="">Plus/moins-value : toutes</option>
-          <option value="gain">En plus-value</option>
-          <option value="loss">En moins-value</option>
-        </select>
+      {open && (
+        <div className="space-y-2 pt-1 border-t border-line/60">
+          {/* Eligibility is Sorare's own answer, not a rule we re-derive: a
+              division's bench already accounts for rarity, season and cards
+              committed elsewhere, which no local filter could reproduce. */}
+          {divisions.length > 0 && (
+            <div>
+              <select
+                value={division}
+                onChange={(e) => onDivision(e.target.value)}
+                aria-label="Filtrer par division d'éligibilité"
+                className="w-full bg-ink border border-line rounded-md px-2 py-1.5 text-xs"
+              >
+                <option value="">Toutes mes cartes</option>
+                {divisions.map((d) => (
+                  <option key={d.slug} value={d.slug}>
+                    Éligibles — {d.label}
+                  </option>
+                ))}
+              </select>
+              {(divisionLoading || divisionNote) && (
+                <p className="mt-1 font-mono text-[10px] text-muted">
+                  {divisionLoading ? "Lecture du vivier Sorare…" : divisionNote}
+                </p>
+              )}
+            </div>
+          )}
 
-        <button
-          onClick={() => onProbableStarterOnly(!probableStarterOnly)}
-          aria-pressed={probableStarterOnly}
-          className={`shrink-0 px-3 py-1.5 rounded-md text-xs font-mono border whitespace-nowrap ${
-            probableStarterOnly ? "bg-ok/15 text-ok border-ok" : "border-line text-muted"
-          }`}
-        >
-          Titu probable
-        </button>
-      </div>
+          <div className="flex gap-1.5" role="group" aria-label="Filtrer par poste">
+            {POSITIONS.map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => onPosition(value)}
+                aria-pressed={position === value}
+                className={`flex-1 py-1.5 rounded-md text-xs font-display uppercase tracking-wide border ${
+                  position === value ? "bg-flood text-ink border-flood font-bold" : "border-line text-muted"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            <select
+              value={rarity}
+              onChange={(e) => onRarity(e.target.value)}
+              aria-label="Filtrer par rareté"
+              className="flex-1 bg-ink border border-line rounded-md px-2 py-1.5 text-xs"
+            >
+              <option value="">Toutes raretés</option>
+              <option value="limited">Limited</option>
+              <option value="rare">Rare</option>
+            </select>
+
+            <button
+              onClick={() => onInSeasonOnly(!inSeasonOnly)}
+              aria-pressed={inSeasonOnly}
+              title="N'afficher que les cartes éligibles à la saison Sorare en cours"
+              className={`shrink-0 px-3 py-1.5 rounded-md text-xs font-mono border whitespace-nowrap ${
+                inSeasonOnly ? "bg-ok/15 text-ok border-ok" : "border-line text-muted"
+              }`}
+            >
+              Saison en cours
+            </button>
+          </div>
+
+          <div className="flex gap-2">
+            <select
+              value={roiFilter}
+              onChange={(e) => onRoiFilter(e.target.value as "" | "gain" | "loss")}
+              aria-label="Filtrer par plus/moins-value"
+              className="flex-1 bg-ink border border-line rounded-md px-2 py-1.5 text-xs"
+            >
+              <option value="">Plus/moins-value : toutes</option>
+              <option value="gain">En plus-value</option>
+              <option value="loss">En moins-value</option>
+            </select>
+
+            <button
+              onClick={() => onProbableStarterOnly(!probableStarterOnly)}
+              aria-pressed={probableStarterOnly}
+              className={`shrink-0 px-3 py-1.5 rounded-md text-xs font-mono border whitespace-nowrap ${
+                probableStarterOnly ? "bg-ok/15 text-ok border-ok" : "border-line text-muted"
+              }`}
+            >
+              Titu probable
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
