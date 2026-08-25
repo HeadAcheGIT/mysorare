@@ -57,7 +57,7 @@ d'un ordre de grandeur — la demande se fait auprès de Sorare.
 2. Copie la **connection string** (bouton "Connect"), format
    `postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require`.
 
-### 2. Pousse le code sur GitLab/GitHub
+### 2. Pousse le code sur GitHub
 
 ```bash
 cd sorare-cockpit-mobile

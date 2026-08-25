@@ -6,7 +6,7 @@ de travail sur ce dépôt — pas seulement quand on te le redemande.
 ## Push en prod
 
 Il n'y a pas d'environnement de staging : le déploiement se fait par push
-sur `origin main` (GitLab → Vercel, auto-deploy — voir README.md,
+sur `origin main` (GitHub → Vercel, auto-deploy — voir README.md,
 « Déploiement, étape par étape »). Autorisation permanente donnée par
 l'utilisateur : à la fin d'un travail terminé et vérifié dans une session,
 commit puis `git push origin main` sans redemander confirmation à chaque
