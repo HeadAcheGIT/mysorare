@@ -3,6 +3,27 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-25 (suite) — Deux corrections sur le terrain, remontées à l'usage
+
+Deux retours directs après le passage à la vue terrain de l'onglet Compo :
+
+- **Plusieurs compos alignées sur une même division** (le cas All Star, qui
+  autorise plusieurs line-ups sur un seul leaderboard) atterrissaient toutes
+  sur le même terrain — dix joueurs ou plus mélangés comme si c'était une
+  seule équipe de cinq, ce qui n'a pas de sens. `d.lineup` était groupé par
+  `leaderboardSlug` seul (`alignedLineupComparison`), sans distinguer les
+  line-ups entre eux ; `ComparisonRow` gagne un `so5LineupId` (déjà en base,
+  jamais exposé jusqu'ici) et `DivisionBoard` regroupe dessus avant
+  d'afficher un terrain par compo, étiqueté « Compo 1 », « Compo 2 »… — un
+  seul terrain, sans étiquette, dans le cas courant d'une seule compo par
+  division.
+- **Le mot « désaccord » ne disait rien** : il fallait taper le joueur pour
+  voir les deux pourcentages qui divergent. Le terrain affiche maintenant
+  directement les deux lectures sous le joueur concerné — notre probabilité
+  au-dessus (déjà là), celle de Sorare juste en dessous en rouge dès que
+  l'écart dépasse le seuil — le tap reste utile pour aller plus loin, plus
+  pour découvrir ce que les chiffres sont.
+
 ## 2026-08-25 — L'onglet Compo prend la forme d'un vrai terrain
 
 Retour direct de l'utilisateur : l'onglet Compo, malgré les fonctionnalités

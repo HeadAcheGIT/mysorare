@@ -16,6 +16,8 @@ type FixtureRow = {
 };
 
 type ComparisonRow = {
+  /** Distinguishes two five-card teams fielded in the same division — an All Star leaderboard can hold several at once. */
+  so5LineupId: string;
   playerSlug: string;
   playerName: string;
   picture: string | null;
@@ -147,6 +149,28 @@ const msg = (err: unknown) => (err instanceof Error ? err.message : "Erreur");
 /** Above this gap between our pStart and Sorare's, a pick is worth a second look before locking in. */
 const DISAGREEMENT_THRESHOLD = 0.2;
 
+/**
+ * Splits a division's fielded cards back into the distinct five-card teams
+ * they belong to. `d.lineup` is flat across every line-up aligned in that
+ * division — most divisions cap it at one, but All Star leaderboards allow
+ * several at once — so grouping by leaderboard alone would show ten-odd
+ * players as if they were a single, impossible team. Order follows first
+ * appearance in the API response, kept stable so "Compo 1"/"Compo 2" don't
+ * shuffle between renders.
+ */
+function groupLineups(rows: ComparisonRow[]): ComparisonRow[][] {
+  const order: string[] = [];
+  const byId = new Map<string, ComparisonRow[]>();
+  for (const r of rows) {
+    if (!byId.has(r.so5LineupId)) {
+      byId.set(r.so5LineupId, []);
+      order.push(r.so5LineupId);
+    }
+    byId.get(r.so5LineupId)!.push(r);
+  }
+  return order.map((id) => byId.get(id)!);
+}
+
 /** What's actually fielded, laid out for the pitch: probability up front, ground truth (played/benched) once known. */
 function alignedToPitch(rows: ComparisonRow[]): PitchPlayer[] {
   return rows.map((r) => {
@@ -154,8 +178,12 @@ function alignedToPitch(rows: ComparisonRow[]): PitchPlayer[] {
     const notes: string[] = [];
     if (r.actualStarted != null) {
       notes.push(r.actualStarted ? `a joué${r.actualScore != null ? ` · ${r.actualScore.toFixed(0)}` : ""}` : "banc");
+    } else if (disagrees) {
+      // The actual gap, not the word "désaccord" — both readings need to be
+      // visible at a glance; the tap is for going further than that, not for
+      // finding out what the numbers even are.
+      notes.push(`Sorare ${pct(r.sorareStarterOdds)}`);
     }
-    if (disagrees) notes.push("désaccord");
     return {
       key: r.cardSlug,
       playerSlug: r.playerSlug,
@@ -517,7 +545,13 @@ export default function DivisionBoard({
                         <span className="text-sm font-bold block truncate">{d.displayName}</span>
                         <span className="text-[11px] font-mono text-muted block truncate">
                           {d.hasLineup
-                            ? `${d.lineup.length || "—"} joueur${d.lineup.length > 1 ? "s" : ""} aligné${d.lineup.length > 1 ? "s" : ""}`
+                            ? (() => {
+                                // A leaderboard normally holds one line-up; All Star divisions allow several
+                                // at once, so the player count alone ("10 joueurs") would read as a mistake
+                                // rather than two separate fives.
+                                const lineupCount = new Set(d.lineup.map((r) => r.so5LineupId)).size;
+                                return `${d.lineup.length || "—"} joueur${d.lineup.length > 1 ? "s" : ""} aligné${d.lineup.length > 1 ? "s" : ""}${lineupCount > 1 ? ` (${lineupCount} compos)` : ""}`;
+                              })()
                             : d.canCompose
                               ? "Aucune compo — tu as les cartes"
                               : d.missingCards > 0
@@ -589,19 +623,44 @@ export default function DivisionBoard({
 
                               {active === "aligned" ? (
                                 <>
-                                  <LineupPitch
-                                    players={alignedToPitch(d.lineup)}
-                                    onSelectPlayer={onSelectPlayer}
-                                    emptyMessage={
-                                      d.hasLineup
-                                        ? "Compo enregistrée sur Sorare — tape « Actualiser » pour en charger le détail."
-                                        : "Aucune compo alignée dans cette division."
+                                  {(() => {
+                                    const lineups = groupLineups(d.lineup);
+                                    if (lineups.length === 0) {
+                                      return (
+                                        <LineupPitch
+                                          players={[]}
+                                          onSelectPlayer={onSelectPlayer}
+                                          emptyMessage={
+                                            d.hasLineup
+                                              ? "Compo enregistrée sur Sorare — tape « Actualiser » pour en charger le détail."
+                                              : "Aucune compo alignée dans cette division."
+                                          }
+                                        />
+                                      );
                                     }
-                                  />
+                                    // A leaderboard normally holds exactly one line-up, so the "Compo N" header
+                                    // only earns its keep — and its screen space — once there's more than one
+                                    // to tell apart (All Star divisions allow several at once).
+                                    return (
+                                      <div className="space-y-3">
+                                        {lineups.map((rows, i) => (
+                                          <div key={rows[0].so5LineupId}>
+                                            {lineups.length > 1 && (
+                                              <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">
+                                                Compo {i + 1}
+                                              </p>
+                                            )}
+                                            <LineupPitch players={alignedToPitch(rows)} onSelectPlayer={onSelectPlayer} />
+                                          </div>
+                                        ))}
+                                      </div>
+                                    );
+                                  })()}
                                   {d.lineup.some((r) => (r.disagreement ?? 0) >= DISAGREEMENT_THRESHOLD) && (
                                     <p className="font-mono text-[10px] text-warn">
-                                      ⚠ un cerclage rouge marque un poste où notre modèle et Sorare divergent d&apos;au
-                                      moins {Math.round(DISAGREEMENT_THRESHOLD * 100)} points de probabilité.
+                                      ⚠ cerclage rouge = désaccord avec Sorare d&apos;au moins{" "}
+                                      {Math.round(DISAGREEMENT_THRESHOLD * 100)} points de probabilité — le pourcentage
+                                      Sorare est affiché sous le joueur concerné.
                                     </p>
                                   )}
                                 </>

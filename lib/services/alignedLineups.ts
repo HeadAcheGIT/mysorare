@@ -91,6 +91,13 @@ export async function syncAlignedLineups(fixtureSlugs: string[]): Promise<{ fixt
 }
 
 export interface ComparisonRow {
+  /**
+   * Sorare's own lineup id. A leaderboard can hold more than one line-up at
+   * once — All Star divisions in particular allow several — so this is what
+   * tells two five-card teams on the same division apart; grouping by
+   * leaderboardSlug alone merges them into one unplayable blob.
+   */
+  so5LineupId: string;
   playerSlug: string;
   playerName: string;
   picture: string | null;
@@ -161,6 +168,7 @@ export async function alignedLineupComparison(fixtureSlug: string): Promise<Divi
     const sorareStarterOdds = proj?.sorareStarterOdds ?? null;
 
     return {
+      so5LineupId: row.so5LineupId,
       playerSlug: row.playerSlug,
       playerName: player?.displayName ?? row.playerSlug,
       picture: player?.pictureUrl ?? null,
