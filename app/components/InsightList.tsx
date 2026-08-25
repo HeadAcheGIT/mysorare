@@ -34,9 +34,11 @@ const TONE: Record<string, { dot: string; text: string }> = {
   dead_weight: { dot: "bg-warn", text: "text-warn" },
   loss: { dot: "bg-warn", text: "text-warn" },
   sell_high: { dot: "bg-limited", text: "text-limited" },
+  u23_expiring: { dot: "bg-limited", text: "text-limited" },
   underused: { dot: "bg-ok", text: "text-ok" },
   rising: { dot: "bg-ok", text: "text-ok" },
 };
+
 
 const POS: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MIL", Forward: "ATT" };
 

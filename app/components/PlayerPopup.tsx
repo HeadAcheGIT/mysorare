@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/apiFetch";
 import MatchList, { type MatchListDetail } from "./MatchList";
 import PlayerNews from "./PlayerNews";
 import PlayerBadges from "./PlayerBadges";
+import PriceHistoryChart, { type PricePoint } from "./PriceHistoryChart";
 import { POSITION_LABEL } from "@/lib/types";
 import type { CardSupply } from "@/lib/services/playerDetail";
 import { CardSupplyStats } from "./CardSupplyBlock";
@@ -19,7 +20,9 @@ type PlayerDetail = MatchListDetail & {
   birthDate: string | null;
   competitionName: string | null;
   cardSupply: CardSupply | null;
+  priceSnapshots?: PricePoint[];
 };
+
 
 type MarketFloor = { floorByRarity: Record<string, number | null>; listedCount: number };
 
@@ -191,7 +194,12 @@ export default function PlayerPopup({
                 </div>
               )}
 
+              {detail.priceSnapshots && detail.priceSnapshots.length > 0 && (
+                <PriceHistoryChart points={detail.priceSnapshots} />
+              )}
+
               {detail.cardSupply && <CardSupplyStats supply={detail.cardSupply} />}
+
 
               <div>
                 <p className="text-[10px] font-mono uppercase tracking-wide text-muted mb-1">Matchs</p>

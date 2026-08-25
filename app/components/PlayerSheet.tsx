@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Sparkline from "./Sparkline";
 import MatchList from "./MatchList";
 import PlayerNews from "./PlayerNews";
 import PlayerBadges from "./PlayerBadges";
 import StartProbability from "./StartProbability";
 import FetchedCardSupply from "./CardSupplyBlock";
+import PriceHistoryChart, { type PricePoint } from "./PriceHistoryChart";
+import { apiFetch } from "@/lib/apiFetch";
 import { cardValue, POSITION_LABEL, rarityOf, scoreColor, SCORE_COLOR_CLASS, type SquadCard } from "@/lib/types";
 
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
@@ -53,6 +55,20 @@ export default function PlayerSheet({
   compared?: boolean;
   onToggleCompare?: () => void;
 }) {
+  const [priceSnapshots, setPriceSnapshots] = useState<PricePoint[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<{ priceSnapshots?: PricePoint[] }>(`/api/player?slug=${encodeURIComponent(card.playerSlug)}`)
+      .then((res) => {
+        if (!cancelled && res.priceSnapshots) setPriceSnapshots(res.priceSnapshots);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [card.playerSlug]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -64,6 +80,7 @@ export default function PlayerSheet({
       document.body.style.overflow = prev;
     };
   }, [onClose]);
+
 
   const rarity = rarityOf(card.rarity);
   const isUnique = card.rarity === "unique";
@@ -246,6 +263,12 @@ export default function PlayerSheet({
               <Stat label="Estimé" value={eur(card.estimatedPrice)} />
             </div>
 
+            {priceSnapshots.length > 0 && (
+              <div className="mt-3">
+                <PriceHistoryChart points={priceSnapshots} rarity={card.rarity} />
+              </div>
+            )}
+
             {/* For an in-season card the any-season floor is usually an old
                 season trading for cents — showing it alone made a card worth
                 €15 look worth €0.33. */}
@@ -255,6 +278,7 @@ export default function PlayerSheet({
                 saison antérieure.
               </p>
             )}
+
 
             {(card.acquiredVia || card.paidWithCredits || card.boughtPriceApprox) && (
               <p className="mt-1 font-mono text-[11px] text-muted">

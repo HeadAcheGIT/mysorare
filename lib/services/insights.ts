@@ -10,7 +10,8 @@ import { cardValue, type SquadCard } from "../types";
  * checked rather than taken on faith.
  */
 
-export type InsightKind = "dead_weight" | "underused" | "sell_high" | "loss" | "unavailable" | "rising";
+export type InsightKind = "dead_weight" | "underused" | "sell_high" | "loss" | "unavailable" | "rising" | "u23_expiring";
+
 
 export interface Insight {
   kind: InsightKind;
@@ -125,6 +126,8 @@ export async function buildInsights(
   const losses: Insight[] = [];
   const unavailable: Insight[] = [];
   const rising: Insight[] = [];
+  const u23Expiring: Insight[] = [];
+
 
   let unenriched = 0;
 
@@ -251,6 +254,21 @@ export async function buildInsights(
         weight: t,
       });
     }
+
+    if (p.birthDate) {
+      const birth = new Date(p.birthDate);
+      const expiry = new Date(birth.getFullYear() + 23, birth.getMonth(), birth.getDate());
+      const now = new Date();
+      const diffDays = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays > 0 && diffDays <= 60) {
+        u23Expiring.push({
+          ...common,
+          kind: "u23_expiring",
+          reason: `Fin U23 dans ${diffDays}j (${expiry.toLocaleDateString("fr-FR")})`,
+          weight: 60 - diffDays + (value ?? 0),
+        });
+      }
+    }
   }
 
   const top = (xs: Insight[], n = 12) => xs.sort((a, b) => b.weight - a.weight).slice(0, n);
@@ -261,6 +279,12 @@ export async function buildInsights(
       title: "Indisponibles",
       description: "Blessés ou suspendus — à sortir de tes compos cette semaine.",
       items: top(dedupeByPlayer(unavailable)),
+    },
+    {
+      kind: "u23_expiring",
+      title: "Bascule U23 imminente",
+      description: "Perdront leur éligibilité U23 dans les 60 prochains jours — anticiper une vente.",
+      items: top(dedupeByPlayer(u23Expiring)),
     },
     {
       kind: "underused",
@@ -295,6 +319,7 @@ export async function buildInsights(
   ];
 
   return { groups: groups.filter((g) => g.items.length > 0), unenriched };
+
 }
 
 /**

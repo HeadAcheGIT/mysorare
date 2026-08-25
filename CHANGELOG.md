@@ -3,6 +3,33 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-25 (suite 2) — Refactoring modulaire, Skeletons & Pull-to-Refresh, Historique Floor Price et Export CSV
+
+Mise à niveau architecturale et ergonomique majeure sur le cockpit :
+
+- **Refactoring modulaire de `app/page.tsx`** : le composant de 1 860 lignes est
+  désormais scindé en sous-composants dédiés par onglet (`WeekTab`, `MercatoTab`,
+  `GalleryTab`, `LineupTab`, `MarketTab`, `HistoryTab`, `SettingsTab`). La page
+  principale redevient un shell de navigation propre et maintenable (~400 lignes).
+- **Skeletons de chargement & Geste Pull-to-Refresh** : intégration de
+  `CardListSkeleton` remplaçant les textes de chargement bruts, et ajout du geste
+  tactile natif *Pull-to-Refresh* (`PullToRefresh.tsx`) sur les onglets Semaine et
+  Galerie pour un ressenti fluide d'application native en mode PWA.
+- **Graphique d'historique de Floor Price (`PriceHistoryChart`)** : affichage
+  d'un mini-graphique interactif SVG des variations de floor price enregistrées
+  par `PriceSnapshot` dans la fiche joueur (`PlayerSheet`) et la modale de scouting
+  (`PlayerPopup`).
+- **Alerte de bascule U23 imminente** : nouvelle catégorie d'insight
+  `u23_expiring` (« Bascule U23 imminente ») dans l'onglet Semaine pour anticiper
+  la vente ou réorganisation des joueurs dont le 23e anniversaire approche (≤ 60 jours).
+- **Export comptable CSV** : ajout dans l'onglet Historique d'un export CSV
+  complet (`lib/accountingExport.ts`) avec encodage UTF-8 BOM, incluant la
+  décomposition exacte cash portefeuille vs crédits Sorare pour la fiscalité et
+  la gestion financière.
+- **Script de données fictives (`db:seed:mock`)** : ajout de `scripts/seed-mock.mjs`
+  injectant un jeu d'essai réaliste et cohérent pour développer hors-ligne sans
+  compte distant.
+
 ## 2026-08-25 (suite) — Deux corrections sur le terrain, remontées à l'usage
 
 Deux retours directs après le passage à la vue terrain de l'onglet Compo :
@@ -57,7 +84,9 @@ un champ `picture`, rempli par une jointure sur `Player.pictureUrl` déjà
 synchronisé localement — aucun appel Sorare de plus, le même principe que
 `alignedLineupComparison` utilisait déjà pour la compo alignée.
 
+
 ## 2026-08-23 (suite) — La carte joueur retrouve ses badges, plus deux signaux
+
 
 Correction du point précédent : retirer le rang de badges (U23, championnat,
 in-season/Classic, série, "déjà en compo") de `PlayerCard` a simplifié la

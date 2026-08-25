@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 
-type Status = {
+export type TokenStatus = {
   signedIn: boolean;
   expiresAt: string | null;
   kind: "oauth" | "jwt" | null;
@@ -12,6 +12,9 @@ type Status = {
   canReadLineups: boolean;
   oauthConfigured: boolean;
 };
+
+type Status = TokenStatus;
+
 
 /** What the OAuth routes redirect back with, in the manager's language. */
 const OAUTH_OUTCOME: Record<string, { text: string; tone: "ok" | "warn" }> = {
