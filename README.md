@@ -313,6 +313,11 @@ proposée est ensuite validée par `previewSo5Lineup` — le verdict règle par
 règle de Sorare, pas une réimplémentation locale des règles. Voir
 `lib/services/divisionLineup.ts`.
 
+Chaque division affiche sa compo alignée et sa compo proposée sur un terrain
+vertical (gardien en bas, attaquants en haut), positionnées par poste réel
+plutôt qu'en liste plate — un onglet segmenté « Alignée / Proposée » bascule
+entre les deux plutôt que de les empiler. Voir `app/components/LineupPitch.tsx`.
+
 ## Si le schéma GraphQL a dérivé
 
 ```bash
@@ -352,9 +357,6 @@ Voir `CHANGELOG.md` pour l'historique détaillé des évolutions du projet.
 
 ## Suite logique
 
-- Vue « terrain » pour l'onglet Compo (formation visuelle plutôt que liste),
-  si l'app doit un jour se rapprocher de l'expérience native Sorare —
-  actuellement un choix assumé de rester un outil de conseil.
 - Comparaison compo jouée / meilleure compo possible a posteriori.
 - Notifications push quand une projection change fortement avant un game
   week (nécessite un provider push, ex. OneSignal ou Web Push natif).

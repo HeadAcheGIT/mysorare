@@ -11,6 +11,7 @@ const card = (over: Partial<BenchCard> = {}): BenchCard => ({
   bonus: 0,
   sorareProjected: null,
   locked: false,
+  picture: null,
   ourExpected: null,
   ourPStart: null,
   sorareStarterOdds: null,

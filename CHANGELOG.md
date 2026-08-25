@@ -3,6 +3,39 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-25 — L'onglet Compo prend la forme d'un vrai terrain
+
+Retour direct de l'utilisateur : l'onglet Compo, malgré les fonctionnalités
+(pondération, comparaison à la compo actuelle, verdict Sorare), restait
+« pas clair et pas très utilisable » — deux listes de texte l'une sous
+l'autre ne donnent aucune idée de la forme d'équipe réellement alignée. Le
+README notait déjà ce manque dans « Suite logique » ; c'est fait.
+
+`DivisionBoard` affiche maintenant chaque compo — alignée et proposée — sur
+un terrain vertical (`LineupPitch.tsx`) : gardien en bas, défenseurs,
+milieux, attaquants en montant vers le haut, chaque joueur positionné par
+son poste réel plutôt que listé à plat. C'est la même lecture que l'écran de
+compo de Sorare lui-même, jusque dans l'orientation. Un onglet segmenté
+« Alignée / Proposée » remplace les deux listes empilées — un terrain à la
+fois, avec le gain projeté affiché directement sur l'onglet « Proposée »
+quand il dépasse le bruit (+0,05 pt).
+
+Ce que le terrain garde de l'ancienne liste, condensé sous chaque joueur
+plutôt qu'à côté : la probabilité de titularisation (ou le score projeté
+côté proposition), un cerclage rouge + mention « désaccord » sur les postes
+où notre modèle et celui de Sorare divergent de 20 points ou plus, un
+cerclage vert + « à ajouter » sur les nouvelles têtes de la proposition, et
+« a joué »/« banc » une fois le match passé. Les chiffres qui pèsent
+vraiment dans la décision — total projeté, gain vs compo actuelle, verdict
+`previewSo5Lineup` — restent en texte sous le terrain : le visuel remplace
+la liste, pas le calcul.
+
+Détail qui manquait pour que la compo proposée ressemble à quelque chose :
+`getDivisionBench` ne portait aucune photo. `BenchCard`/`Candidate` gagnent
+un champ `picture`, rempli par une jointure sur `Player.pictureUrl` déjà
+synchronisé localement — aucun appel Sorare de plus, le même principe que
+`alignedLineupComparison` utilisait déjà pour la compo alignée.
+
 ## 2026-08-23 (suite) — La carte joueur retrouve ses badges, plus deux signaux
 
 Correction du point précédent : retirer le rang de badges (U23, championnat,

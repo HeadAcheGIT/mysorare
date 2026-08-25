@@ -31,6 +31,8 @@ export interface BenchCard {
   sorareProjected: number | null;
   /** Already committed to another line-up this game week, so not actually pickable. */
   locked: boolean;
+  /** Joined from Player.pictureUrl, already synced locally — no extra Sorare call. Powers the pitch view's avatars. */
+  picture: string | null;
   /** Our own model, joined from Projection. */
   ourExpected: number | null;
   ourPStart: number | null;
@@ -133,6 +135,7 @@ export function toCandidates(bench: BenchCard[], weights: LineupWeights = DEFAUL
       pStart: b.ourPStart ?? 0,
       l15: null,
       bonus: b.bonus,
+      picture: b.picture,
     }));
 }
 
@@ -196,10 +199,13 @@ export async function getDivisionBench(leaderboardSlug: string, fixtureSlug: str
   if (!nodes.length) return [];
 
   const playerSlugs = [...new Set(nodes.map((n) => n.anyPlayer?.slug).filter((s): s is string => !!s))];
-  const projections = await prisma.projection.findMany({
-    where: { fixtureSlug, playerSlug: { in: playerSlugs } },
-  });
+  const [projections, players] = await Promise.all([
+    prisma.projection.findMany({ where: { fixtureSlug, playerSlug: { in: playerSlugs } } }),
+    // Already-synced local pictures, not another Sorare round trip — same join alignedLineupComparison uses for the aligned-lineup pitch.
+    prisma.player.findMany({ where: { slug: { in: playerSlugs } }, select: { slug: true, pictureUrl: true } }),
+  ]);
   const projByPlayer = new Map(projections.map((p) => [p.playerSlug, p]));
+  const pictureByPlayer = new Map(players.map((p) => [p.slug, p.pictureUrl]));
 
   return nodes
     .filter((n) => n.anyPlayer?.slug)
@@ -215,6 +221,7 @@ export async function getDivisionBench(leaderboardSlug: string, fixtureSlug: str
         bonus: n.bonus ?? 0,
         sorareProjected: n.projectedScore ?? null,
         locked: Boolean(n.lockedForLeaderboard),
+        picture: pictureByPlayer.get(n.anyPlayer!.slug) ?? null,
         ourExpected: proj?.expectedScore ?? null,
         ourPStart: proj?.pStart ?? null,
         sorareStarterOdds: proj?.sorareStarterOdds ?? null,

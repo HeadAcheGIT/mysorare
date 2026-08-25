@@ -21,6 +21,8 @@ export interface Candidate {
   pStart: number;
   l15: number | null;
   bonus: number;
+  /** Optional: only the division board's pitch view needs it, so other callers (buy advice, debrief) simply omit it. */
+  picture?: string | null;
 }
 
 export interface Rules {

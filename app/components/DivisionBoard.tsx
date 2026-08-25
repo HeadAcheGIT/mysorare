@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/apiFetch";
 import { POSITION_SHORT } from "@/lib/types";
 import { startLabel, type PStartBasis } from "./StartProbability";
+import LineupPitch, { type PitchPlayer } from "./LineupPitch";
 
 type FixtureRow = {
   slug: string;
@@ -102,6 +103,7 @@ type ProposalCard = {
   cardSlug: string;
   playerSlug: string;
   playerName: string;
+  picture: string | null;
   position: string;
   expected: number;
   pStart: number;
@@ -145,6 +147,52 @@ const msg = (err: unknown) => (err instanceof Error ? err.message : "Erreur");
 /** Above this gap between our pStart and Sorare's, a pick is worth a second look before locking in. */
 const DISAGREEMENT_THRESHOLD = 0.2;
 
+/** What's actually fielded, laid out for the pitch: probability up front, ground truth (played/benched) once known. */
+function alignedToPitch(rows: ComparisonRow[]): PitchPlayer[] {
+  return rows.map((r) => {
+    const disagrees = (r.disagreement ?? 0) >= DISAGREEMENT_THRESHOLD;
+    const notes: string[] = [];
+    if (r.actualStarted != null) {
+      notes.push(r.actualStarted ? `a joué${r.actualScore != null ? ` · ${r.actualScore.toFixed(0)}` : ""}` : "banc");
+    }
+    if (disagrees) notes.push("désaccord");
+    return {
+      key: r.cardSlug,
+      playerSlug: r.playerSlug,
+      playerName: r.playerName,
+      picture: r.picture,
+      position: r.position ?? "Midfielder",
+      captain: r.captain,
+      statValue: pct(r.ourPStart),
+      statLabel: startLabel(r.ourPStartBasis),
+      note: notes.length ? notes.join(" · ") : undefined,
+      noteTone: r.actualStarted === false || disagrees ? "warn" : r.actualStarted === true ? "ok" : undefined,
+      ringTone: disagrees ? "warn" : null,
+      faded: r.actualStarted === false,
+    };
+  });
+}
+
+/** The optimiser's suggestion, laid out for the pitch: projected score up front, "à ajouter" flagging what's new vs. the current line-up. */
+function proposedToPitch(cards: ProposalCard[], cardsIn: string[] | undefined): PitchPlayer[] {
+  return cards.map((c) => {
+    const isNew = cardsIn?.includes(c.cardSlug) ?? false;
+    return {
+      key: c.cardSlug,
+      playerSlug: c.playerSlug,
+      playerName: c.playerName,
+      picture: c.picture,
+      position: c.position,
+      captain: c.isCaptain,
+      statValue: one(c.expected),
+      statLabel: pct(c.pStart),
+      note: isNew ? "à ajouter" : undefined,
+      noteTone: isNew ? "ok" : undefined,
+      ringTone: isNew ? "ok" : null,
+    };
+  });
+}
+
 /**
  * The game week as Sorare itself splits it: the league tracks the account can
  * enter, the manager teams inside each with the division they sit in, and for
@@ -171,6 +219,8 @@ export default function DivisionBoard({
   const [syncing, setSyncing] = useState(false);
   const [seasonalityFilter, setSeasonalityFilter] = useState<"all" | "IN_SEASON" | "ALL_SEASONS">("all");
   const [openDivisions, setOpenDivisions] = useState<Record<string, boolean>>({});
+  // Which pitch a division shows — defaults to whatever's aligned when there is one, else the proposal, so opening a division never lands on an empty pitch.
+  const [pitchTab, setPitchTab] = useState<Record<string, "aligned" | "proposed">>({});
   // Bench + proposal are fetched per division, on open: a game week exposes
   // ~76 leaderboards, so loading them all up front would be mostly wasted.
   const [benches, setBenches] = useState<Record<string, BenchState>>({});
@@ -503,193 +553,128 @@ export default function DivisionBoard({
                           </div>
                         )}
 
-                        {d.lineup.length > 0 ? (
-                          <ul className="flex flex-col gap-1.5">
-                            {d.lineup.map((r) => {
-                              const disagrees = (r.disagreement ?? 0) >= DISAGREEMENT_THRESHOLD;
-                              return (
-                                <li key={r.cardSlug}>
-                                  <button
-                                    type="button"
-                                    onClick={() => onSelectPlayer(r.playerSlug)}
-                                    className={`w-full text-left flex items-center gap-2.5 p-2 rounded-md bg-ink border-l-[3px] hover:bg-line/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-flood ${
-                                      disagrees ? "border-l-warn" : "border-l-transparent"
-                                    }`}
-                                  >
-                                    {r.picture ? (
-                                      // eslint-disable-next-line @next/next/no-img-element -- remote Sorare CDN
-                                      <img
-                                        src={r.picture}
-                                        alt=""
-                                        loading="lazy"
-                                        className="w-8 h-8 rounded-full object-cover bg-ink2 shrink-0"
-                                      />
-                                    ) : (
-                                      <span className="w-8 h-8 rounded-full bg-ink2 shrink-0" />
-                                    )}
-                                    <span className="min-w-0 flex-1">
-                                      <span className="text-sm font-bold truncate flex items-center gap-1.5">
-                                        {r.playerName}
-                                        {r.captain && (
-                                          <span className="shrink-0 px-1 rounded bg-flood text-ink text-[9px] font-bold">
-                                            C
-                                          </span>
-                                        )}
-                                      </span>
-                                      <span className="text-[10px] font-mono text-muted block truncate">
-                                        {r.position ? (POSITION_SHORT[r.position] ?? r.position) : ""}
-                                        {disagrees && <span className="text-warn"> · désaccord de probabilité</span>}
-                                      </span>
-                                    </span>
-                                    <span className="text-right shrink-0 font-mono text-[10px]">
-                                      <span className="block">
-                                        {startLabel(r.ourPStartBasis)}{" "}
-                                        <span className="text-flood">{pct(r.ourPStart)}</span>
-                                      </span>
-                                      <span className="flex items-center gap-1 justify-end">
-                                        {r.sorareOddsProviderIconUrl && (
-                                          // eslint-disable-next-line @next/next/no-img-element -- remote provider icon
-                                          <img src={r.sorareOddsProviderIconUrl} alt="" className="w-2.5 h-2.5" />
-                                        )}
-                                        {r.sorareStarterOdds != null ? (
-                                          <>
-                                            Sorare <span className="text-muted">{pct(r.sorareStarterOdds)}</span>
-                                          </>
-                                        ) : (
-                                          <span className="text-muted/70" title="Sorare n'a pas publié de cote pour ce match">
-                                            Sorare n.d.
-                                          </span>
-                                        )}
-                                      </span>
-                                      {r.actualStarted != null && (
-                                        <span className={`block ${r.actualStarted ? "text-ok" : "text-warn"}`}>
-                                          {r.actualStarted ? "a joué" : "banc"}
-                                          {r.actualScore != null && ` · ${r.actualScore.toFixed(0)}`}
-                                        </span>
-                                      )}
-                                    </span>
-                                  </button>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        ) : (
-                          <p className="font-mono text-xs text-muted">
-                            {d.hasLineup
-                              ? "Compo enregistrée sur Sorare — tape « Actualiser » pour en charger le détail."
-                              : "Aucune compo alignée dans cette division."}
-                          </p>
-                        )}
-
                         {(() => {
                           const bench = benches[d.slug];
-                          if (!bench) return null;
-                          if (bench.status === "loading") {
-                            return <p className="font-mono text-xs text-muted">Chargement du vivier…</p>;
-                          }
-                          if (bench.status === "error") {
-                            return (
-                              // Le message d'origine (souvent celui de l'auth
-                              // Sorare) dit déjà quoi faire — le répéter ici
-                              // ne ferait que le noyer.
-                              <p className="font-mono text-xs text-warn border-t border-line pt-2">
-                                Vivier et compo proposée indisponibles — {bench.message}
-                              </p>
-                            );
-                          }
-
-                          const { proposal, delta, validation, lockedCount, bench: cards, infeasibleReason } =
-                            bench.data;
-                          const blocking = (validation?.feedbackRules ?? []).filter(
-                            (r) => r.state !== "VALID" && r.state !== "valid"
-                          );
+                          const active = pitchTab[d.slug] ?? (d.lineup.length > 0 ? "aligned" : "proposed");
+                          const setActive = (tab: "aligned" | "proposed") =>
+                            setPitchTab((prev) => ({ ...prev, [d.slug]: tab }));
+                          const gain = bench?.status === "ready" ? (bench.data.delta?.gain ?? null) : null;
 
                           return (
-                            <div className="pt-1 space-y-2 border-t border-line">
-                              <p className="text-[10px] font-mono uppercase tracking-wide text-muted">
-                                Compo proposée
-                              </p>
+                            <div className="space-y-2">
+                              {/* Segmented like Sorare's own line-up/preview switch — one pitch on screen at a
+                                  time rather than the two lists stacked, which is what made this screen read
+                                  as a report instead of an actual team you could picture. */}
+                              <div className="flex gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setActive("aligned")}
+                                  className={`flex-1 text-xs font-bold rounded-md px-2 py-1.5 border ${
+                                    active === "aligned" ? "border-flood text-flood bg-flood/10" : "border-line text-muted"
+                                  }`}
+                                >
+                                  Alignée
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setActive("proposed")}
+                                  className={`flex-1 text-xs font-bold rounded-md px-2 py-1.5 border ${
+                                    active === "proposed" ? "border-flood text-flood bg-flood/10" : "border-line text-muted"
+                                  }`}
+                                >
+                                  Proposée
+                                  {gain != null && gain > 0.05 && <span className="ml-1 text-ok">+{one(gain)}</span>}
+                                </button>
+                              </div>
 
-                              {infeasibleReason || !proposal ? (
-                                <p className="font-mono text-xs text-warn">
-                                  Impossible de composer ici avec les cartes disponibles
-                                  {lockedCount > 0 && ` (${lockedCount} déjà engagée${lockedCount > 1 ? "s" : ""} ailleurs)`}
-                                  .
-                                </p>
-                              ) : (
+                              {active === "aligned" ? (
                                 <>
-                                  <p className="font-mono text-[11px] text-muted">
-                                    <span className="font-display text-xl text-flood align-middle">
-                                      {one(proposal.total)}
-                                    </span>{" "}
-                                    pts projetés
-                                    {delta?.gain != null && (
-                                      <span className={delta.gain > 0 ? "text-ok" : delta.gain < 0 ? "text-warn" : ""}>
-                                        {" · "}
-                                        {delta.gain > 0 ? "+" : ""}
-                                        {one(delta.gain)} vs ta compo actuelle
-                                      </span>
-                                    )}
-                                    {delta?.currentTotal == null && d.hasLineup && " · compo actuelle non chiffrable"}
-                                  </p>
-
-                                  <ul className="flex flex-col gap-1">
-                                    {proposal.cards.map((c) => {
-                                      const isNew = delta?.cardsIn.includes(c.cardSlug);
-                                      return (
-                                        <li key={c.cardSlug}>
-                                          <button
-                                            type="button"
-                                            onClick={() => onSelectPlayer(c.playerSlug)}
-                                            className="w-full text-left flex items-center gap-2 p-1.5 rounded bg-ink hover:bg-line/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-flood"
-                                          >
-                                            <span className="font-mono text-[10px] text-muted w-8 shrink-0">
-                                              {POSITION_SHORT[c.position] ?? c.position}
-                                            </span>
-                                            <span className="text-xs truncate flex-1 flex items-center gap-1.5">
-                                              {c.playerName}
-                                              {c.isCaptain && (
-                                                <span className="shrink-0 px-1 rounded bg-flood text-ink text-[9px] font-bold">
-                                                  C
-                                                </span>
-                                              )}
-                                              {isNew && (
-                                                <span className="shrink-0 text-[9px] font-mono text-ok">à ajouter</span>
-                                              )}
-                                            </span>
-                                            <span className="font-mono text-[10px] text-muted shrink-0">
-                                              {one(c.expected)} · {pct(c.pStart)}
-                                            </span>
-                                          </button>
-                                        </li>
-                                      );
-                                    })}
-                                  </ul>
-
-                                  {delta && delta.cardsOut.length > 0 && (
+                                  <LineupPitch
+                                    players={alignedToPitch(d.lineup)}
+                                    onSelectPlayer={onSelectPlayer}
+                                    emptyMessage={
+                                      d.hasLineup
+                                        ? "Compo enregistrée sur Sorare — tape « Actualiser » pour en charger le détail."
+                                        : "Aucune compo alignée dans cette division."
+                                    }
+                                  />
+                                  {d.lineup.some((r) => (r.disagreement ?? 0) >= DISAGREEMENT_THRESHOLD) && (
                                     <p className="font-mono text-[10px] text-warn">
-                                      {delta.cardsOut.length} carte{delta.cardsOut.length > 1 ? "s" : ""} à sortir
-                                    </p>
-                                  )}
-
-                                  {validation && (
-                                    <p
-                                      className={`font-mono text-[10px] ${blocking.length ? "text-warn" : "text-ok"}`}
-                                      title="Verdict renvoyé par Sorare pour cette compo"
-                                    >
-                                      {blocking.length
-                                        ? `Sorare refuse : ${blocking.map((r) => r.message ?? r.ruleName).join(" · ")}`
-                                        : `Validée par Sorare${validation.rewardMultiplier != null ? ` · multiplicateur ×${validation.rewardMultiplier}` : ""}`}
+                                      ⚠ un cerclage rouge marque un poste où notre modèle et Sorare divergent d&apos;au
+                                      moins {Math.round(DISAGREEMENT_THRESHOLD * 100)} points de probabilité.
                                     </p>
                                   )}
                                 </>
+                              ) : !bench || bench.status === "loading" ? (
+                                <p className="font-mono text-xs text-muted">Chargement du vivier…</p>
+                              ) : bench.status === "error" ? (
+                                // Le message d'origine (souvent celui de l'auth Sorare) dit déjà quoi faire —
+                                // le répéter ici ne ferait que le noyer.
+                                <p className="font-mono text-xs text-warn">
+                                  Vivier et compo proposée indisponibles — {bench.message}
+                                </p>
+                              ) : (
+                                (() => {
+                                  const { proposal, delta, validation, lockedCount, bench: cards, infeasibleReason } =
+                                    bench.data;
+                                  const blocking = (validation?.feedbackRules ?? []).filter(
+                                    (r) => r.state !== "VALID" && r.state !== "valid"
+                                  );
+                                  return (
+                                    <>
+                                      {infeasibleReason || !proposal ? (
+                                        <p className="font-mono text-xs text-warn">
+                                          Impossible de composer ici avec les cartes disponibles
+                                          {lockedCount > 0 &&
+                                            ` (${lockedCount} déjà engagée${lockedCount > 1 ? "s" : ""} ailleurs)`}
+                                          .
+                                        </p>
+                                      ) : (
+                                        <>
+                                          <LineupPitch
+                                            players={proposedToPitch(proposal.cards, delta?.cardsIn)}
+                                            onSelectPlayer={onSelectPlayer}
+                                          />
+                                          <p className="font-mono text-[11px] text-muted">
+                                            <span className="font-display text-xl text-flood align-middle">
+                                              {one(proposal.total)}
+                                            </span>{" "}
+                                            pts projetés
+                                            {delta?.gain != null && (
+                                              <span className={delta.gain > 0 ? "text-ok" : delta.gain < 0 ? "text-warn" : ""}>
+                                                {" · "}
+                                                {delta.gain > 0 ? "+" : ""}
+                                                {one(delta.gain)} vs ta compo actuelle
+                                              </span>
+                                            )}
+                                            {delta?.currentTotal == null && d.hasLineup && " · compo actuelle non chiffrable"}
+                                          </p>
+                                          {delta && delta.cardsOut.length > 0 && (
+                                            <p className="font-mono text-[10px] text-warn">
+                                              {delta.cardsOut.length} carte{delta.cardsOut.length > 1 ? "s" : ""} à sortir
+                                            </p>
+                                          )}
+                                          {validation && (
+                                            <p
+                                              className={`font-mono text-[10px] ${blocking.length ? "text-warn" : "text-ok"}`}
+                                              title="Verdict renvoyé par Sorare pour cette compo"
+                                            >
+                                              {blocking.length
+                                                ? `Sorare refuse : ${blocking.map((r) => r.message ?? r.ruleName).join(" · ")}`
+                                                : `Validée par Sorare${validation.rewardMultiplier != null ? ` · multiplicateur ×${validation.rewardMultiplier}` : ""}`}
+                                            </p>
+                                          )}
+                                        </>
+                                      )}
+                                      <p className="font-mono text-[10px] text-muted">
+                                        Vivier : {cards.length} carte{cards.length > 1 ? "s" : ""} éligible
+                                        {cards.length > 1 ? "s" : ""}
+                                        {lockedCount > 0 && ` · ${lockedCount} déjà engagée${lockedCount > 1 ? "s" : ""}`}
+                                      </p>
+                                    </>
+                                  );
+                                })()
                               )}
-
-                              <p className="font-mono text-[10px] text-muted">
-                                Vivier : {cards.length} carte{cards.length > 1 ? "s" : ""} éligible
-                                {cards.length > 1 ? "s" : ""}
-                                {lockedCount > 0 && ` · ${lockedCount} déjà engagée${lockedCount > 1 ? "s" : ""}`}
-                              </p>
                             </div>
                           );
                         })()}
