@@ -6,6 +6,10 @@ import InSeasonAdvisor from "../InSeasonAdvisor";
 import Debrief from "../Debrief";
 import DivisionRoi from "../DivisionRoi";
 import ProjectionAccuracy from "../ProjectionAccuracy";
+import { benchRisks } from "@/lib/lineupBenchRisk";
+import type { SquadCard } from "@/lib/types";
+
+const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 export type SavedLineup = {
   id: number;
@@ -20,6 +24,7 @@ export type SavedLineup = {
 interface LineupTabProps {
   currentFixture: string | null;
   fixture: string | null;
+  squad: SquadCard[];
   savedLineups: SavedLineup[];
   onSelectPlayer: (playerSlug: string, extra?: ReactNode) => void;
   deleteSavedLineup: (id: number) => void;
@@ -29,6 +34,7 @@ interface LineupTabProps {
 export default function LineupTab({
   currentFixture,
   fixture,
+  squad,
   savedLineups,
   onSelectPlayer,
   deleteSavedLineup,
@@ -63,27 +69,48 @@ export default function LineupTab({
         <div className="mt-6">
           <h2 className="font-display uppercase text-sm tracking-wide text-muted mb-2">Compos sauvegardées</h2>
           <ul className="flex flex-col gap-2">
-            {savedLineups.map((l) => (
-              <li
-                key={l.id}
-                className="p-3 rounded-lg bg-ink2 border border-line flex items-center justify-between gap-2"
-              >
-                <div className="min-w-0">
-                  <p className="font-bold truncate">
-                    {l.competition} · <span className="text-flood">{l.projectedTotal}</span> pts
-                  </p>
-                  <p className="text-xs text-muted truncate">
-                    {new Date(l.createdAt).toLocaleString("fr-FR")} · {l.cards.length} cartes
-                  </p>
-                </div>
-                <button
-                  onClick={() => deleteSavedLineup(l.id)}
-                  className="shrink-0 text-xs text-warn border border-warn rounded-md px-2 py-1.5"
-                >
-                  Suppr.
-                </button>
-              </li>
-            ))}
+            {savedLineups.map((l) => {
+              // Only the still-open fixture can still be changed before lock —
+              // a saved lineup for a closed one is history, graded by Debrief
+              // below rather than flagged as an actionable risk here.
+              const risks = l.fixture === currentFixture ? benchRisks(l.cards, squad) : [];
+              return (
+                <li key={l.id} className="p-3 rounded-lg bg-ink2 border border-line">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-bold truncate">
+                        {l.competition} · <span className="text-flood">{l.projectedTotal}</span> pts
+                      </p>
+                      <p className="text-xs text-muted truncate">
+                        {new Date(l.createdAt).toLocaleString("fr-FR")} · {l.cards.length} cartes
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => deleteSavedLineup(l.id)}
+                      className="shrink-0 text-xs text-warn border border-warn rounded-md px-2 py-1.5"
+                    >
+                      Suppr.
+                    </button>
+                  </div>
+                  {risks.length > 0 && (
+                    <ul className="mt-2 pt-2 border-t border-line space-y-1">
+                      {risks.map((r) => (
+                        <li key={r.cardSlug}>
+                          <button
+                            type="button"
+                            onClick={() => onSelectPlayer(r.playerSlug)}
+                            className="font-mono text-[11px] text-warn text-left"
+                          >
+                            ⚠️ {r.name} — {r.pStartBasis === "starts" ? "titu" : "joue"} {pct(r.pStart)}, risque de
+                            banc
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

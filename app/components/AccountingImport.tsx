@@ -8,6 +8,7 @@ type Summary = {
   importedAt: string | null;
   rows: number;
   totals: { out: number; in: number; net: number; fees: number };
+  byYear: { year: number; out: number; in: number; net: number; cumulativeNet: number }[];
   creditCards: number;
   creditTotal: number;
 };
@@ -103,6 +104,28 @@ export default function AccountingImport({ onImported }: { onImported?: () => vo
             </span>
             {summary.totals.fees > 0 && ` · dont ${eur(summary.totals.fees)} de frais`}
           </p>
+          {summary.byYear.length > 0 && (
+            <div className="pt-1 border-t border-line/50">
+              <p className="font-mono text-[10px] text-muted uppercase tracking-wide mb-0.5">
+                Réalisé par année civile (cumulé)
+              </p>
+              <ul className="space-y-0.5">
+                {summary.byYear.map((y) => (
+                  <li key={y.year} className="font-mono text-[11px] flex items-center justify-between gap-2">
+                    <span className="text-muted">{y.year}</span>
+                    <span className={y.net >= 0 ? "text-ok" : "text-warn"}>
+                      {y.net >= 0 ? "+" : ""}
+                      {eur(y.net)}
+                    </span>
+                    <span className={`ml-auto ${y.cumulativeNet >= 0 ? "text-ok" : "text-warn"}`}>
+                      cumul {y.cumulativeNet >= 0 ? "+" : ""}
+                      {eur(y.cumulativeNet)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {summary.creditCards > 0 && (
             <p className="font-mono text-[11px] text-limited">
               {summary.creditCards} carte(s) réglée(s) en partie avec des crédits, pour{" "}

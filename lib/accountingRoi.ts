@@ -131,6 +131,52 @@ export interface LedgerTotals {
   lastEntryAt: string | null;
 }
 
+export interface YearlyTotals {
+  year: number;
+  out: number;
+  in: number;
+  /** in - out for this calendar year alone. */
+  net: number;
+  /** Running total across every year up to and including this one — the
+   *  figure that answers "am I up or down overall", not just this year. */
+  cumulativeNet: number;
+}
+
+/**
+ * Realized cash flow per calendar year, oldest first, with a running total —
+ * built for the tax question ("what did I actually realize in year X") and
+ * the portfolio question ("am I up overall") at once, since the second is
+ * just the last row's cumulativeNet rather than a separate computation that
+ * could drift from the yearly figures.
+ *
+ * Rows without a date are excluded — same "can't attribute it" rule as
+ * `unpriced` in ledgerByCard, an unknown year must not silently land in
+ * whichever year happens to sort first.
+ */
+export function ledgerTotalsByYear(rows: (LedgerRow & { date?: string })[]): YearlyTotals[] {
+  const byYear = new Map<number, { out: number; in: number }>();
+
+  for (const r of rows) {
+    if (!r.date || r.eurAmount == null) continue;
+    const year = new Date(r.date).getFullYear();
+    if (Number.isNaN(year)) continue;
+    const acc = byYear.get(year) ?? { out: 0, in: 0 };
+    const abs = Math.abs(r.eurAmount);
+    if (r.eurAmount < 0) acc.out += abs;
+    else acc.in += abs;
+    byYear.set(year, acc);
+  }
+
+  let cumulative = 0;
+  return [...byYear.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([year, { out, in: inn }]) => {
+      const net = round(inn - out);
+      cumulative = round(cumulative + net);
+      return { year, out: round(out), in: round(inn), net, cumulativeNet: cumulative };
+    });
+}
+
 /** Whole-ledger totals for the history header. */
 export function ledgerTotals(rows: (LedgerRow & { date?: string })[]): LedgerTotals {
   let out = 0;

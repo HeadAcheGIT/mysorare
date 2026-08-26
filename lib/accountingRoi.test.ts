@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ledgerByCard, ledgerTotals, priceComposition, type LedgerRow } from "./accountingRoi";
+import { ledgerByCard, ledgerTotals, ledgerTotalsByYear, priceComposition, type LedgerRow } from "./accountingRoi";
 
 const row = (over: Partial<LedgerRow>): LedgerRow => ({
   cardSlug: "maxime-lopez-2026-limited-33",
@@ -133,5 +133,36 @@ describe("ledgerTotals", () => {
 
   it("handles an empty ledger", () => {
     expect(ledgerTotals([])).toMatchObject({ out: 0, in: 0, net: 0, rows: 0, lastEntryAt: null });
+  });
+});
+
+describe("ledgerTotalsByYear", () => {
+  it("groups by calendar year, oldest first", () => {
+    const years = ledgerTotalsByYear([
+      { cardSlug: "a", entryType: "payment", eurAmount: -10, date: "2025-03-01T00:00:00.000Z" },
+      { cardSlug: "a", entryType: "payment", eurAmount: 4, date: "2025-06-01T00:00:00.000Z" },
+      { cardSlug: "b", entryType: "payment", eurAmount: 20, date: "2026-01-01T00:00:00.000Z" },
+    ]);
+    expect(years.map((y) => y.year)).toEqual([2025, 2026]);
+    expect(years[0]).toMatchObject({ out: 10, in: 4, net: -6 });
+    expect(years[1]).toMatchObject({ out: 0, in: 20, net: 20 });
+  });
+
+  it("carries a running total across years", () => {
+    const years = ledgerTotalsByYear([
+      { cardSlug: "a", entryType: "payment", eurAmount: -6, date: "2025-01-01T00:00:00.000Z" },
+      { cardSlug: "b", entryType: "payment", eurAmount: 20, date: "2026-01-01T00:00:00.000Z" },
+    ]);
+    expect(years[0].cumulativeNet).toBeCloseTo(-6);
+    expect(years[1].cumulativeNet).toBeCloseTo(14);
+  });
+
+  it("excludes rows with no date rather than guessing a year", () => {
+    const years = ledgerTotalsByYear([{ cardSlug: "a", entryType: "payment", eurAmount: -6 }]);
+    expect(years).toEqual([]);
+  });
+
+  it("handles an empty ledger", () => {
+    expect(ledgerTotalsByYear([])).toEqual([]);
   });
 });

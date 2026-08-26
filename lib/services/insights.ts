@@ -51,6 +51,30 @@ export interface InsightGroup {
 const eur = (v: number | null) => (v == null ? "—" : `${v.toFixed(2)} €`);
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 
+/** Appended to a dead-weight reason when the purchase price is known — the whole point of the group is deciding sell now vs. hold, which needs the P&L, not just today's value. */
+export function plGain(value: number | null, boughtPrice: number | null): string {
+  if (value == null || boughtPrice == null || boughtPrice <= 0) return "";
+  const ratio = ((value - boughtPrice) / boughtPrice) * 100;
+  const sign = ratio >= 0 ? "+" : "";
+  return ` · ${sign}${ratio.toFixed(0)} % vs achat`;
+}
+
+/**
+ * A dormant card losing money is the one to sell now; a dormant card that
+ * appreciated can wait — sorting "poids morts" by raw value alone put both
+ * side by side, which buried the actually urgent ones. Unknown P&L (no
+ * boughtPrice) falls back to raw value, same as before this existed.
+ */
+export function deadWeightPriority(value: number | null, boughtPrice: number | null): number {
+  if (value == null) return 0;
+  if (boughtPrice == null || boughtPrice <= 0) return value;
+  const loss = boughtPrice - value;
+  // A card in real loss ranks by how much it's losing, always above any
+  // dormant card that's merely sitting on a gain (offset so the smallest
+  // loss still outranks the largest gain).
+  return loss > 0 ? loss + 1_000_000 : value;
+}
+
 function avg(xs: number[]): number | null {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 }
@@ -194,16 +218,16 @@ export async function buildInsights(
       dead.push({
         ...common,
         kind: "dead_weight",
-        reason: "Sans club — ne peut plus marquer",
-        weight: value ?? 0,
+        reason: `Sans club — ne peut plus marquer${plGain(value, c.boughtPrice)}`,
+        weight: deadWeightPriority(value, c.boughtPrice),
       });
     } else if (playRate != null && playRate <= 0.2) {
       // Barely plays: the card can't score, whatever the player's talent.
       dead.push({
         ...common,
         kind: "dead_weight",
-        reason: `${p.app15}/15 matchs joués · ${eur(value)}`,
-        weight: value ?? 0,
+        reason: `${p.app15}/15 matchs joués · ${eur(value)}${plGain(value, c.boughtPrice)}`,
+        weight: deadWeightPriority(value, c.boughtPrice),
       });
     } else if (playRate != null && playRate >= 0.8 && (p.avgL10Played ?? 0) >= 45) {
       // Plays every week and scores well — worth checking you're fielding it.
@@ -305,7 +329,7 @@ export async function buildInsights(
     {
       kind: "dead_weight",
       title: "Poids morts",
-      description: "Ne jouent quasiment plus : immobilisent de la valeur pour rien.",
+      description: "Ne jouent quasiment plus — triés par urgence : celles qui perdent de la valeur d'abord.",
       items: top(dead),
     },
     {

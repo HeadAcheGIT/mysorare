@@ -3,6 +3,43 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-26 (suite 3) — Trois des six pistes d'amélioration du jour, les trois autres déjà couvertes
+
+Suite à la liste de pistes proposée plus tôt (fiscal cumulé, alerte
+non-titulaire probable, comparateur d'impact compo, poids morts croisés au
+P&L, U23 dans le scouting, filtre bascule U23) : trois étaient déjà couvertes
+par l'app existante, vérifié plutôt que reconstruit en double —
+
+- **Comparateur d'impact compo** : déjà fait. `computeDelta`
+  (`lib/services/divisionLineup.ts`) calcule le gain total de la compo
+  proposée vs la compo actuellement alignée, affiché dans `DivisionBoard`
+  avec les cartes à sortir/rentrer — exactement la simulation demandée.
+- **U23 croisé au score dans le scouting** : déjà fait. Le tri "U23" et le
+  badge avec tooltip d'échéance sont déjà dans `Scouting.tsx`, sur la même
+  ligne que L5/prix — et héritent automatiquement du correctif du 1er
+  juillet fait plus tôt aujourd'hui.
+- **Filtre "prochaine bascule"** : la seule bascule qui existe est la sortie
+  du U23 (rien n'"entre" en U23 à une date fixe, seulement en sort) — déjà
+  l'insight "Bascule U23 imminente" corrigé plus tôt.
+
+Les trois vraiment nouvelles :
+
+- **Poids morts croisés au P&L** (`lib/services/insights.ts`) : "Poids
+  morts" affichait la valeur actuelle mais jamais si la carte avait pris ou
+  perdu de la valeur depuis l'achat. Le tri priorise maintenant une carte
+  dormante qui perd de l'argent au-dessus d'une carte dormante qui en a
+  gagné (`deadWeightPriority`), et la raison affiche le delta (`plGain`).
+- **Résumé fiscal cumulé par année civile** (`ledgerTotalsByYear` dans
+  `lib/accountingRoi.ts`, affiché sous l'import comptable) : plus besoin de
+  rouvrir le CSV pour savoir où on en est — le réalisé par année et le cumul
+  glissant sont sous la synthèse du grand livre.
+- **Alerte "non-titulaire probable" pré-compo** (`lib/lineupBenchRisk.ts`) :
+  chaque compo sauvegardée pour la game week encore ouverte est comparée à
+  la probabilité de titularisation actuelle des cartes qu'elle contient — un
+  ⚠️ apparaît si elle est tombée sous 40 %, y compris après la vérification
+  des compos officielles confirmées (`checkConfirmedLineups`) juste avant la
+  clôture.
+
 ## 2026-08-26 (suite) — Nouvel onglet Coffre (quoi sceller) + deuxième bug U23 trouvé au passage
 
 Demande : un onglet pour savoir quelles cartes sceller dans le Coffre Sorare

@@ -1,6 +1,13 @@
 import { prisma } from "../prisma";
 import { entryId, parseAccountingCsv } from "../accountingParse";
-import { ledgerByCard, ledgerTotals, priceComposition, type PriceComposition } from "../accountingRoi";
+import {
+  ledgerByCard,
+  ledgerTotals,
+  ledgerTotalsByYear,
+  priceComposition,
+  type PriceComposition,
+  type YearlyTotals,
+} from "../accountingRoi";
 
 /**
  * The Sorare accounting export: import, and what it lets the app say.
@@ -77,6 +84,8 @@ export interface AccountingSummary {
   importedAt: string | null;
   rows: number;
   totals: { out: number; in: number; net: number; fees: number };
+  /** Realized cash flow per calendar year, oldest first, with a running total — see ledgerTotalsByYear. */
+  byYear: YearlyTotals[];
   /** Cards whose purchase was partly settled with credits. */
   creditCards: number;
   /** Total settled with credits, in EUR. */
@@ -94,12 +103,15 @@ export async function accountingSummary(): Promise<AccountingSummary> {
       importedAt: null,
       rows: 0,
       totals: { out: 0, in: 0, net: 0, fees: 0 },
+      byYear: [],
       creditCards: 0,
       creditTotal: 0,
     };
   }
 
-  const totals = ledgerTotals(entries.map((e) => ({ ...e, date: e.date.toISOString() })));
+  const withDate = entries.map((e) => ({ ...e, date: e.date.toISOString() }));
+  const totals = ledgerTotals(withDate);
+  const byYear = ledgerTotalsByYear(withDate);
   const byCard = ledgerByCard(entries);
 
   // Credit shares need the real prices, which live on Card.
@@ -124,6 +136,7 @@ export async function accountingSummary(): Promise<AccountingSummary> {
     importedAt: importedAt?.toISOString() ?? null,
     rows: totals.rows,
     totals: { out: totals.out, in: totals.in, net: totals.net, fees: totals.fees },
+    byYear,
     creditCards,
     creditTotal: Math.round(creditTotal * 100) / 100,
   };

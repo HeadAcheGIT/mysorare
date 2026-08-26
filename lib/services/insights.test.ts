@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dedupeByPlayer, type Insight } from "./insights";
+import { dedupeByPlayer, plGain, deadWeightPriority, type Insight } from "./insights";
 
 const insight = (playerSlug: string, cardSlug: string, weight: number, reason = "15/15 matchs"): Insight => ({
   kind: "underused",
@@ -51,5 +51,35 @@ describe("dedupeByPlayer", () => {
 
   it("returns an empty list untouched", () => {
     expect(dedupeByPlayer([])).toEqual([]);
+  });
+});
+
+describe("plGain", () => {
+  it("is empty when either figure is unknown", () => {
+    expect(plGain(null, 10)).toBe("");
+    expect(plGain(10, null)).toBe("");
+    expect(plGain(10, 0)).toBe("");
+  });
+
+  it("shows a signed percentage vs the purchase price", () => {
+    expect(plGain(15, 10)).toBe(" · +50 % vs achat");
+    expect(plGain(5, 10)).toBe(" · -50 % vs achat");
+  });
+});
+
+describe("deadWeightPriority", () => {
+  it("falls back to raw value when boughtPrice is unknown", () => {
+    expect(deadWeightPriority(30, null)).toBe(30);
+    expect(deadWeightPriority(null, 10)).toBe(0);
+  });
+
+  it("ranks any real loss above any dormant gain", () => {
+    const smallLoss = deadWeightPriority(9, 10); // -1
+    const bigGain = deadWeightPriority(1000, 10); // +990, no loss
+    expect(smallLoss).toBeGreaterThan(bigGain);
+  });
+
+  it("ranks a bigger loss above a smaller one", () => {
+    expect(deadWeightPriority(1, 10)).toBeGreaterThan(deadWeightPriority(9, 10));
   });
 });

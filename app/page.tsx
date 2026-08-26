@@ -498,6 +498,7 @@ export default function Page() {
           <LineupTab
             currentFixture={gameWeek?.fixture ?? null}
             fixture={fixture}
+            squad={squad}
             savedLineups={savedLineups}
             onSelectPlayer={openPlayer}
             deleteSavedLineup={deleteSavedLineup}
