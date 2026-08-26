@@ -127,6 +127,12 @@ model Card {
   /// showing rather than hiding.
   paidWithCredits Boolean   @default(false)
 
+  /// User-toggled: whether this card is sealed in the Sorare Vault. Not
+  /// synced from the API (sealing isn't exposed on the public/authenticated
+  /// schema this app already talks to) — set from the Coffre tab, same
+  /// manual-tracking approach as Override for line-up exclusions.
+  sealedAt DateTime?
+
   @@index([playerSlug])
 }
 

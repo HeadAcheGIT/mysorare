@@ -224,6 +224,34 @@ neutre (« à surveiller »), jamais étiquetée bonne ou mauvaise nouvelle ; ce
 sont les signaux situationnels ci-dessus, sur le club *actuel* du joueur,
 qui portent le verdict.
 
+## Onglet Coffre — quoi sceller (`lib/sealAdvice.ts`, `app/components/SealBoard.tsx`)
+
+Sceller une carte dans le Coffre Sorare (feature 2026) booste les gains de
+leaderboard mais bloque la carte deux semaines par rareté — la stratégie
+recommandée est de sceller ce qui ne servirait à rien en compo de toute
+façon. L'onglet classe chaque carte possédée en trois groupes :
+
+- **Déjà scellées** : marquées comme telles depuis l'app (voir plus bas).
+- **À sceller** : au moins une des raisons ci-dessous s'applique et la carte
+  n'est pas encore marquée scellée.
+  - *Sans club* : `clubSlug` inconnu — retraité ou libre.
+  - *Championnat non couvert* : même `leaguesOpenForGameStats` que
+    l'onglet Mercato ci-dessus — si Sorare ne note pas ce championnat, la
+    carte ne comptera jamais en Classic/So5.
+  - *Inactif depuis longtemps* : plus de 200 jours depuis la dernière
+    apparition connue (`lastPlayedAt`), et pas déjà sans club.
+- **À garder disponibles** : tout le reste — encore une utilité potentielle.
+
+**Important — le statut scellé est déclaratif, pas synchronisé.** L'API
+Sorare que l'app interroge (publique et authentifiée) n'expose aucun champ
+de sealing/vault à ce jour ; le bouton « Marquer scellée » écrit simplement
+`Card.sealedAt` dans notre base pour du suivi, il ne scelle rien côté
+Sorare. Coche-la après l'avoir réellement scellée sur Sorare. Si l'API
+finit par exposer ce champ, le prochain travail consiste à télécharger le
+schéma live (`curl -o schema.graphql https://api.sorare.com/graphql/schema`,
+voir « Si le schéma GraphQL a dérivé » plus bas) pour trouver le vrai nom
+de champ avant de brancher une synchro automatique.
+
 ## Pourquoi la synchro est en deux temps
 
 Une fonction serverless a un temps d'exécution limité par invocation. Un

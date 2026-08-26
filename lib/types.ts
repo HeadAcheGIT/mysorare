@@ -73,6 +73,8 @@ export interface SquadCard {
   acquiredVia?: string | null;
   /** Sorare settled this purchase with conversion credits. */
   paidWithCredits?: boolean;
+  /** ISO date the card was marked sealed in the Vault, when set from the Coffre tab. */
+  sealedAt?: string | null;
   /**
    * Cheapest *in-season* card of this player and rarity. For an in-season card
    * this is the meaningful floor — the any-season one is usually an old season

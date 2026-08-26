@@ -203,6 +203,7 @@ export async function getSquadView(
         acquiredVia: c.acquiredVia,
         acquiredAt: c.acquiredAt?.toISOString() ?? null,
         paidWithCredits: c.paidWithCredits,
+        sealedAt: c.sealedAt?.toISOString() ?? null,
         // Null unless an accounting export has been imported — an unknown
         // split must stay unknown rather than read as "no credits used".
         priceComposition: priceComposition(c.boughtPrice, ledger.get(c.slug)),

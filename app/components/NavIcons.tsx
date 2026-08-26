@@ -83,6 +83,17 @@ export function DataIcon() {
   );
 }
 
+/** Coffre (Vault/sealing) tab. */
+export function SealIcon() {
+  return (
+    <svg {...common}>
+      <rect x="4" y="9" width="12" height="8" rx="1.5" />
+      <path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" />
+      <circle cx="10" cy="13" r="1.3" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function SearchIcon() {
   return (
     <svg {...common}>

@@ -17,6 +17,7 @@ import {
   DataIcon,
   SearchIcon,
   MoreIcon,
+  SealIcon,
 } from "./components/NavIcons";
 import GlobalSearch from "./components/GlobalSearch";
 import PlayerCompare from "./components/PlayerCompare";
@@ -34,11 +35,14 @@ import LineupTab, { type SavedLineup } from "./components/tabs/LineupTab";
 import MarketTab, { type WatchlistGroupRow } from "./components/tabs/MarketTab";
 import HistoryTab, { type SaleRow } from "./components/tabs/HistoryTab";
 import SettingsTab, { type SyncLogRow } from "./components/tabs/SettingsTab";
+import SealTab from "./components/tabs/SealTab";
 
 const msg = (e: unknown) => (e instanceof ApiFetchError || e instanceof Error ? e.message : "Erreur inattendue");
 
 export default function Page() {
-  const [tab, setTab] = useState<"week" | "mercato" | "gallery" | "lineup" | "market" | "history" | "settings">(
+  const [tab, setTab] = useState<
+    "week" | "mercato" | "gallery" | "lineup" | "market" | "history" | "settings" | "seal"
+  >(
     () =>
       typeof window !== "undefined" && new URLSearchParams(window.location.search).has("sorare")
         ? "settings"
@@ -370,7 +374,9 @@ export default function Page() {
               aria-expanded={moreOpen}
               aria-label="Plus — Historique et Données"
               className={`w-9 h-9 grid place-items-center rounded-md border ${
-                tab === "history" || tab === "settings" ? "border-flood text-flood" : "border-line text-muted"
+                tab === "history" || tab === "settings" || tab === "seal"
+                  ? "border-flood text-flood"
+                  : "border-line text-muted"
               }`}
             >
               <MoreIcon />
@@ -393,6 +399,18 @@ export default function Page() {
                     }`}
                   >
                     <HistoryIcon /> Historique
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setTab("seal");
+                      setMoreOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 border-t border-line ${
+                      tab === "seal" ? "text-flood" : "text-fg"
+                    }`}
+                  >
+                    <SealIcon /> Coffre
                   </button>
                   <button
                     role="menuitem"
@@ -446,6 +464,17 @@ export default function Page() {
             coveredLeagues={coveredLeagues}
             signals={mercatoSignals}
             onSelectPlayer={openPlayer}
+          />
+        )}
+
+        {tab === "seal" && (
+          <SealTab
+            squad={squad}
+            coveredLeagues={coveredLeagues}
+            onSelectPlayer={openPlayer}
+            onToggled={(cardSlug, sealedAt) =>
+              setSquad((prev) => prev.map((c) => (c.cardSlug === cardSlug ? { ...c, sealedAt } : c)))
+            }
           />
         )}
 

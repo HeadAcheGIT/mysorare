@@ -3,6 +3,37 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-26 (suite) — Nouvel onglet Coffre (quoi sceller) + deuxième bug U23 trouvé au passage
+
+Demande : un onglet pour savoir quelles cartes sceller dans le Coffre Sorare
+(feature Vault 2026) — celles qui ne servent à rien en compo de toute façon
+(pas de club, championnat non noté par Sorare, inactif depuis longtemps) —
+et lesquelles sont déjà scellées.
+
+- **`lib/sealAdvice.ts`** : classe chaque carte possédée en scellée / à
+  sceller / à garder disponible, à partir de trois critères pris dans les
+  données déjà en base (pas de club, `competitionSlug` absent de
+  `leaguesOpenForGameStats` — le même set que la « Championnat non couvert »
+  de l'onglet Mercato, réutilisé tel quel — ou aucune apparition depuis plus
+  de 200 jours). Testé isolément (`lib/sealAdvice.test.ts`).
+- **Statut scellé déclaratif, pas synchronisé** : vérifié que l'API Sorare
+  (schéma public + authentifié) n'expose aucun champ de sealing à ce jour —
+  impossible de le confirmer avec certitude depuis cette session (accès
+  réseau direct à `api.sorare.com` bloqué ici), donc plutôt que de deviner un
+  nom de champ et risquer de casser la synchro des cartes en prod, le statut
+  scellé est un simple booléen géré depuis l'app (`Card.sealedAt`, migration
+  `m_card_seal`) que l'utilisateur coche après avoir vraiment scellé la carte
+  sur Sorare. `app/api/cards/seal` fait le toggle.
+- **`app/components/SealBoard.tsx` + `SealTab.tsx`** : nouvel onglet « Coffre »
+  ajouté au menu « Plus » (à côté d'Historique et Données) plutôt qu'à la nav
+  principale — usage occasionnel, pas hebdomadaire.
+- **Deuxième bug U23 trouvé en marge** : `lib/services/insights.ts` avait sa
+  propre copie du calcul « fin U23 = 23e anniversaire exact » pour l'insight
+  `u23_expiring`, non touchée par le correctif du matin qui n'avait changé
+  que `lib/types.ts`. Corrigée pour appeler `u23Status()` au lieu de
+  dupliquer le calcul — plus jamais deux définitions de la même règle
+  susceptibles de diverger.
+
 ## 2026-08-26 — Correctif : le calcul U23 utilisait la mauvaise règle (bascule au 1er juillet, pas au 23e anniversaire)
 
 Doute remonté par l'utilisateur sur les calculs U23 ajoutés la veille : le

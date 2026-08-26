@@ -1,5 +1,5 @@
 import { prisma } from "../prisma";
-import { cardValue, type SquadCard } from "../types";
+import { cardValue, u23Status, type SquadCard } from "../types";
 
 /**
  * Turns a large gallery into a short list of things worth acting on.
@@ -255,16 +255,14 @@ export async function buildInsights(
       });
     }
 
-    if (p.birthDate) {
-      const birth = new Date(p.birthDate);
-      const expiry = new Date(birth.getFullYear() + 23, birth.getMonth(), birth.getDate());
-      const now = new Date();
-      const diffDays = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      if (diffDays > 0 && diffDays <= 60) {
+    const u23 = u23Status(p.birthDate?.toISOString() ?? null);
+    if (u23?.eligible) {
+      const diffDays = Math.ceil((u23.validUntil.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 60) {
         u23Expiring.push({
           ...common,
           kind: "u23_expiring",
-          reason: `Fin U23 dans ${diffDays}j (${expiry.toLocaleDateString("fr-FR")})`,
+          reason: `Bascule U23 le ${u23.validUntil.toLocaleDateString("fr-FR")} (dans ${diffDays}j)`,
           weight: 60 - diffDays + (value ?? 0),
         });
       }
