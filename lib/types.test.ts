@@ -45,20 +45,31 @@ describe("u23Status", () => {
     expect(status?.eligible).toBe(true);
   });
 
-  it("is not eligible for someone already 23", () => {
+  it("is not eligible for someone well past 24 regardless of birth month", () => {
     const dob = new Date();
-    dob.setFullYear(dob.getFullYear() - 23);
-    dob.setDate(dob.getDate() - 1); // safely past the 23rd birthday
+    dob.setFullYear(dob.getFullYear() - 25);
+    dob.setDate(dob.getDate() - 1); // past every possible July 1st cutoff
     const status = u23Status(dob.toISOString());
     expect(status?.eligible).toBe(false);
   });
 
-  it("validUntil is exactly the 23rd birthday", () => {
-    const dob = new Date("2003-06-15T00:00:00.000Z");
-    const status = u23Status(dob.toISOString());
-    expect(status?.validUntil.getUTCFullYear()).toBe(2026);
-    expect(status?.validUntil.getUTCMonth()).toBe(5); // June, 0-indexed
-    expect(status?.validUntil.getUTCDate()).toBe(15);
+  it("stays eligible for a full extra season when born after July 1st (birthday hasn't hit the last cutoff yet)", () => {
+    // Born 2003-08-15: at the 2026-07-01 cutoff they're still 22 (birthday
+    // not yet reached that year), so they stay U23 through the whole
+    // 2027-2028 season too, only dropping out on 2028-07-01.
+    const status = u23Status("2003-08-15T00:00:00.000Z");
+    expect(status?.validUntil.getUTCFullYear()).toBe(2028);
+    expect(status?.validUntil.getUTCMonth()).toBe(6); // July, 0-indexed
+    expect(status?.validUntil.getUTCDate()).toBe(1);
+  });
+
+  it("validUntil is July 1st of the year the player turns 24 as of that cutoff (born on/before July 1st)", () => {
+    // Born 2003-06-15: already 24 as of 2027-07-01 (birthday passed), so
+    // switches out then rather than waiting for the 2027-06-15 birthday.
+    const status = u23Status("2003-06-15T00:00:00.000Z");
+    expect(status?.validUntil.getUTCFullYear()).toBe(2027);
+    expect(status?.validUntil.getUTCMonth()).toBe(6); // July, 0-indexed
+    expect(status?.validUntil.getUTCDate()).toBe(1);
   });
 });
 

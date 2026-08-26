@@ -228,19 +228,31 @@ export const SCORE_COLOR_CLASS: Record<ReturnType<typeof scoreColor>, string> = 
 };
 
 /**
- * U23 status from birth date: eligible while under 23, with the "valid
- * until" date being exactly the 23rd birthday. This mirrors the age cut used
- * for U23-restricted competitions, but note Sorare's own per-season cutoff
- * (e.g. tied to a calendar year rather than a rolling birthday) isn't exposed
- * by the public API, so treat this as an approximation, not the official date.
+ * U23 status from birth date. Sorare does NOT use a rolling 23rd birthday:
+ * per Sorare's own rules (help.sorare.com, "What is Under 23 (U23) for
+ * Sorare Football?"), a player's age for U23 eligibility is fixed for the
+ * entire season as their age on July 1st of that season, regardless of when
+ * their real birthday falls. So a player keeps (or loses) U23 status for a
+ * full season at a time, and switches only on July 1st — never mid-season.
+ *
+ * `validUntil` is that switch date: the July 1st on which the player's
+ * age-at-cutoff first reaches 24, i.e. the moment they drop out of U23.
  */
 export function u23Status(birthDate: string | null): { eligible: boolean; validUntil: Date } | null {
   if (!birthDate) return null;
   const dob = new Date(birthDate);
   if (Number.isNaN(dob.getTime())) return null;
-  const validUntil = new Date(dob);
-  validUntil.setFullYear(validUntil.getFullYear() + 23);
-  return { eligible: validUntil.getTime() > Date.now(), validUntil };
+
+  const dobYear = dob.getUTCFullYear();
+  const july1SameYear = Date.UTC(dobYear, 6, 1);
+  const bornAfterJuly1 = dob.getTime() > july1SameYear;
+
+  // First season year Y where (Y - dobYear - bornAfterJuly1) >= 24, i.e. the
+  // player is 24 or older as of that season's July 1st cutoff.
+  const switchYear = dobYear + 24 + (bornAfterJuly1 ? 1 : 0);
+  const validUntil = new Date(Date.UTC(switchYear, 6, 1));
+
+  return { eligible: Date.now() < validUntil.getTime(), validUntil };
 }
 
 /**

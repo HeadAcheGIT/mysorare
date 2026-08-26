@@ -3,6 +3,33 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-26 — Correctif : le calcul U23 utilisait la mauvaise règle (bascule au 1er juillet, pas au 23e anniversaire)
+
+Doute remonté par l'utilisateur sur les calculs U23 ajoutés la veille : le
+badge et l'insight `u23_expiring` traitaient la fin de l'éligibilité comme le
+23e anniversaire exact du joueur (`u23Status` dans `lib/types.ts`), avec un
+commentaire notant explicitement que c'était une approximation. Vérification
+faite auprès de la doc officielle Sorare (help.sorare.com, "What is Under 23
+(U23) for Sorare Football?") : ce n'est pas la vraie règle. Sorare fige l'âge
+de chaque joueur pour toute la saison à sa valeur au **1er juillet** de cette
+saison, peu importe la date de naissance réelle — la bascule ne peut donc
+jamais tomber en cours de saison, uniquement au 1er juillet.
+
+Conséquence concrète du bug : un joueur né après le 1er juillet gardait son
+statut U23 quelques mois de trop (jusqu'à son anniversaire réel), alors que
+Sorare l'aurait déjà basculé le 1er juillet précédent si son âge y atteignait
+24 ans ; à l'inverse un joueur né avant le 1er juillet pouvait perdre son
+badge trop tôt selon les cas.
+
+`u23Status` recalcule maintenant la première année de bascule (le 1er juillet
+où l'âge calculé au 1er juillet atteint 24 ans, en tenant compte de si
+l'anniversaire tombe avant ou après le 1er juillet de l'année de naissance) et
+retourne cette date comme `validUntil`. Le badge U23 et l'insight « Bascule
+U23 imminente » (`lib/services/insights.ts`) consomment déjà `validUntil` de
+façon générique, donc aucun changement nécessaire côté eux — seule la date
+qu'ils reçoivent est maintenant correcte. Tests unitaires (`lib/types.test.ts`)
+mis à jour pour couvrir les deux cas (naissance avant/après le 1er juillet).
+
 ## 2026-08-25 (suite 2) — Refactoring modulaire, Skeletons & Pull-to-Refresh, Historique Floor Price et Export CSV
 
 Mise à niveau architecturale et ergonomique majeure sur le cockpit :
