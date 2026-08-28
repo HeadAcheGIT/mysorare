@@ -146,6 +146,17 @@ const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 const msg = (err: unknown) => (err instanceof Error ? err.message : "Erreur");
 
+/** How long ago the board last pulled real Arena/So5 line-ups from Sorare. */
+function syncedAgo(date: Date | null): string {
+  if (!date) return "jamais synchronisé";
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60_000);
+  if (minutes < 1) return "à l'instant";
+  if (minutes < 60) return `il y a ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `il y a ${hours}h`;
+  return `il y a ${Math.floor(hours / 24)}j`;
+}
+
 /** Above this gap between our pStart and Sorare's, a pick is worth a second look before locking in. */
 const DISAGREEMENT_THRESHOLD = 0.2;
 
@@ -259,6 +270,14 @@ export default function DivisionBoard({
    * globale, see DEFAULT_LINEUP_WEIGHTS in divisionLineup.ts).
    */
   const [weights, setWeights] = useState({ form: 0, titu: 0, proj: 100 });
+  // Persisted so the freshness readout survives a reload — otherwise a page
+  // refresh would read as "never synced" right after a successful one.
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("lineupLastSynced");
+    if (stored) setLastSynced(new Date(stored));
+  }, []);
 
   useEffect(() => {
     apiFetch<FixtureRow[]>("/api/fixtures")
@@ -352,6 +371,9 @@ export default function DivisionBoard({
         body: JSON.stringify({ fixture: selected }),
       });
       await load(selected);
+      const now = new Date();
+      setLastSynced(now);
+      localStorage.setItem("lineupLastSynced", now.toISOString());
     } catch (err) {
       onError(msg(err));
     } finally {
@@ -366,35 +388,40 @@ export default function DivisionBoard({
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <select
-          value={selected ?? ""}
-          onChange={(e) => setSelected(e.target.value)}
-          aria-label="Game week"
-          className="flex-1 min-w-0 bg-ink border border-line rounded-md px-3 py-2 text-sm"
-        >
-          {fixtures.map((f) => (
-            <option key={f.slug} value={f.slug}>
-              {/* Sorare exposes two numbers: `displayName` counts weeks inside the
-                  season ("Game Week 7") and `gameWeek` counts them since 2019
-                  (706). The header uses the first, so this picking the second
-                  labelled the very same week two different ways one tab apart. */}
-              {f.displayName ?? (f.gameWeek != null ? `GW${f.gameWeek}` : f.slug)}
-              {f.startDate && f.endDate ? ` · ${shortDate(f.startDate)}–${shortDate(f.endDate)}` : ""}
-              {f.slug === currentFixture ? " · en cours" : ""}
-            </option>
-          ))}
-        </select>
+      <div>
         <button
           type="button"
           onClick={refresh}
           disabled={syncing || !selected}
-          title="Resynchroniser divisions et compos depuis Sorare"
-          className="shrink-0 border border-line font-bold px-3 py-2 rounded-md text-sm disabled:opacity-50"
+          title="Recharge tes vraies compos alignées sur Sorare (Arena, So5, in-season…) pour cette game week"
+          className="w-full bg-flood text-ink font-bold py-3 rounded-md text-sm disabled:opacity-50"
         >
-          {syncing ? "…" : "↻ Actualiser"}
+          {syncing ? "Synchronisation…" : "↻ Recharger mes compos depuis Sorare"}
         </button>
+        <p className="font-mono text-[11px] text-muted mt-1">
+          Reflet de ce qui est réellement aligné sur Sorare (Arena, So5, in-season…) — {syncedAgo(lastSynced)}.
+          Change ta compo sur Sorare, puis retape ce bouton pour la voir ici.
+        </p>
       </div>
+
+      <select
+        value={selected ?? ""}
+        onChange={(e) => setSelected(e.target.value)}
+        aria-label="Game week"
+        className="w-full bg-ink border border-line rounded-md px-3 py-2 text-sm"
+      >
+        {fixtures.map((f) => (
+          <option key={f.slug} value={f.slug}>
+            {/* Sorare exposes two numbers: `displayName` counts weeks inside the
+                season ("Game Week 7") and `gameWeek` counts them since 2019
+                (706). The header uses the first, so this picking the second
+                labelled the very same week two different ways one tab apart. */}
+            {f.displayName ?? (f.gameWeek != null ? `GW${f.gameWeek}` : f.slug)}
+            {f.startDate && f.endDate ? ` · ${shortDate(f.startDate)}–${shortDate(f.endDate)}` : ""}
+            {f.slug === currentFixture ? " · en cours" : ""}
+          </option>
+        ))}
+      </select>
 
       {fixture?.cutOffDate && (
         <p className="font-mono text-[11px] text-muted">

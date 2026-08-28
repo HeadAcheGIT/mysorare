@@ -3,6 +3,25 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
+## 2026-08-28 (suite) — Bouton de sync des compos Sorare rendu visible, dans l'onglet Compo
+
+Suite au retour de l'utilisateur : la fonctionnalité demandée ("un bouton
+dans Compo qui reflète exactement mes compos Sorare, Arena/So5/in-season
+compris") existait déjà — `/api/divisions/sync` tire à la fois la
+structure des divisions et les compos réellement alignées
+(`syncAlignedLineups`) depuis Sorare. Le problème n'était pas l'absence de
+la fonctionnalité mais sa discrétion : un petit bouton icône ("↻
+Actualiser") à côté d'un sélecteur de game week, sans rien pour dire
+depuis quand les données affichées dataient.
+
+`DivisionBoard.tsx` : le bouton devient le premier élément du bloc,
+pleine largeur, libellé explicite ("↻ Recharger mes compos depuis
+Sorare"), avec une ligne "il y a Xh/jamais synchronisé" en dessous
+(persistée en `localStorage` pour survivre à un rechargement de page).
+Aucune nouvelle route ni logique de sync — seulement rendre visible ce
+qui tournait déjà, avec la fraîcheur affichée pour qu'on sache quand s'y
+fier.
+
 ## 2026-08-28 — Fraîcheur visible sur le badge blessure/suspension
 
 Signalé par l'utilisateur : un joueur exclu pour cumul de cartons (2 jaunes
