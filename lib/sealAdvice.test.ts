@@ -17,6 +17,7 @@ function card(overrides: Partial<SquadCard> & { playerSlug: string }): SquadCard
     clubPicture: null,
     injury: null,
     suspended: false,
+    enrichedAt: null,
     pStart: null,
     pPlay: null,
     pStartBasis: null,

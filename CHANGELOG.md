@@ -3,7 +3,26 @@
 Format libre, en français, orienté "qu'est-ce qui a changé et pourquoi" plutôt
 que liste de commits. Les entrées les plus récentes en haut.
 
-## 2026-08-26 (suite 3) — Trois des six pistes d'amélioration du jour, les trois autres déjà couvertes
+## 2026-08-28 — Fraîcheur visible sur le badge blessure/suspension
+
+Signalé par l'utilisateur : un joueur exclu pour cumul de cartons (2 jaunes
+= 1 rouge) restait affiché comme disponible alors que Sorare l'avait déjà
+mis à 0%. Vérification du code : le statut `suspended` ne fait que relayer
+le champ `activeSuspensions` de l'API publique Sorare — il n'y a (et il n'y
+aura pas) de logique maison "2 jaunes = rouge", ce serait de la devinette
+sur une règle disciplinaire qui nous échappe. Le vrai problème est qu'on
+ne peut pas distinguer, en le regardant, si le badge vient d'une synchro
+d'il y a 5 minutes ou de la veille (le cron ne tourne qu'une fois par jour
+sur le plan Vercel Hobby) — un bouton de sync manuelle existe déjà
+(« Tout synchroniser », onglet Données) mais rien n'indiquait s'il fallait
+s'en servir avant de composer.
+
+Ajout de `enrichedAt` (déjà en base sur `Player`, jamais exposé) jusqu'au
+`SquadCard` et affichage sous le badge blessure/suspension dans la fiche
+joueur : « vérifié il y a Xh », avec rappel de relancer la synchro en cas
+de doute. Pas de nouvelle logique de détection — juste rendre visible ce
+qu'on sait déjà sur la fraîcheur de la donnée, pour que la confiance
+accordée au badge soit celle que les données méritent réellement.
 
 Suite à la liste de pistes proposée plus tôt (fiscal cumulé, alerte
 non-titulaire probable, comparateur d'impact compo, poids morts croisés au

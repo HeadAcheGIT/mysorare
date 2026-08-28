@@ -14,6 +14,18 @@ import { cardValue, POSITION_LABEL, rarityOf, scoreColor, SCORE_COLOR_CLASS, typ
 const one = (v: number | null) => (v == null ? "—" : v.toFixed(1));
 const eur = (v: number | null | undefined) => (v == null ? "—" : `${v.toFixed(2)} €`);
 
+/** How long ago the injury/suspension flag was last checked against Sorare — the
+ *  flag itself is only ever as fresh as the last sync, so this is what tells you
+ *  whether to trust it or hit "Tout synchroniser" before composing. */
+function enrichedAgo(iso: string | null): string | null {
+  if (!iso) return null;
+  const hours = Math.floor((Date.now() - new Date(iso).getTime()) / 3_600_000);
+  if (hours < 1) return "vérifié il y a moins d'1h";
+  if (hours < 24) return `vérifié il y a ${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `vérifié il y a ${days}j`;
+}
+
 /** Sorare's transfer types, in the manager's language. */
 const ACQUISITION_LABEL: Record<string, string> = {
   ENGLISH_AUCTION: "Gagnée aux enchères",
@@ -165,6 +177,12 @@ export default function PlayerSheet({
           {(card.injury || card.suspended) && (
             <p className="text-sm text-warn bg-warn/10 border border-warn/40 rounded-md px-3 py-2">
               {card.suspended ? "Suspendu" : `Blessé — ${card.injury}`}
+              {enrichedAgo(card.enrichedAt) && (
+                <span className="block font-mono text-[11px] text-warn/70 mt-0.5">
+                  {enrichedAgo(card.enrichedAt)} — donnée Sorare, relance « Tout synchroniser » avant de composer
+                  si tu en doutes.
+                </span>
+              )}
             </p>
           )}
 

@@ -23,6 +23,8 @@ export interface SquadCard {
   clubPicture: string | null;
   injury: string | null;
   suspended: boolean;
+  /** ISO datetime of the last successful enrichment for this player — how stale injury/suspended can be. */
+  enrichedAt: string | null;
   /** Probability of being in the starting XI — read `pStartBasis` before labelling it. */
   pStart: number | null;
   /** Probability of appearing at all, starter or substitute. */

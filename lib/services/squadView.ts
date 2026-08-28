@@ -168,6 +168,7 @@ export async function getSquadView(
         clubPicture: club?.pictureUrl ?? null,
         injury: p.injuryStatus,
         suspended: p.suspended,
+        enrichedAt: p.enrichedAt?.toISOString() ?? null,
         pStart: ov?.pStart ?? proj?.pStart ?? null,
         pPlay: proj?.pPlay ?? null,
         // A manual override replaces the number but not its meaning, so the
